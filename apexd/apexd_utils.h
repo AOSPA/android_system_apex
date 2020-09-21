@@ -61,21 +61,17 @@ inline int WaitChild(pid_t pid) {
   }
 }
 
-// TODO(ioffe): change to Result<void>?
-inline int ForkAndRun(const std::vector<std::string>& args,
-                      std::string* error_msg) {
+inline Result<void> ForkAndRun(const std::vector<std::string>& args) {
   LOG(DEBUG) << "Forking : " << android::base::Join(args, " ");
   std::vector<const char*> argv;
   argv.resize(args.size() + 1, nullptr);
   std::transform(args.begin(), args.end(), argv.begin(),
                  [](const std::string& in) { return in.c_str(); });
 
-  // 3) Fork.
   pid_t pid = fork();
   if (pid == -1) {
     // Fork failed.
-    *error_msg = PStringLog() << "Unable to fork";
-    return -1;
+    return ErrnoError() << "Unable to fork";
   }
 
   if (pid == 0) {
@@ -86,9 +82,9 @@ inline int ForkAndRun(const std::vector<std::string>& args,
 
   int rc = WaitChild(pid);
   if (rc != 0) {
-    *error_msg = StringLog() << "Failed run: status=" << rc;
+    return Error() << "Failed run: status=" << rc;
   }
-  return rc;
+  return {};
 }
 
 template <typename Fn>
@@ -176,16 +172,6 @@ inline Result<void> DeleteDir(const std::string& path) {
     return Error() << "Failed to delete path " << path << " : " << ec.message();
   }
   return {};
-}
-
-inline Result<ino_t> get_path_inode(const std::string& path) {
-  struct stat buf;
-  memset(&buf, 0, sizeof(buf));
-  if (stat(path.c_str(), &buf) != 0) {
-    return ErrnoError() << "Failed to stat " << path;
-  } else {
-    return buf.st_ino;
-  }
 }
 
 inline Result<bool> PathExists(const std::string& path) {

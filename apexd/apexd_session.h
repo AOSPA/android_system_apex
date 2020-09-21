@@ -64,6 +64,7 @@ class ApexSession {
       const ::apex::proto::SessionState::State& state);
 
   android::base::Result<void> DeleteSession() const;
+  static void DeleteFinalizedSessions();
 
  private:
   ApexSession(::apex::proto::SessionState state);

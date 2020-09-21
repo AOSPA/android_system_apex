@@ -23,16 +23,20 @@
 
 #include "apexd_utils.h"
 
-using android::base::GetBoolProperty;
 using android::base::GetProperty;
 using android::base::Result;
 using android::base::WaitForProperty;
 
 namespace android {
 namespace apex {
-void waitForBootStatus(Result<void> (&revert_fn)(const std::string&),
-                       void (&complete_fn)()) {
-  while (!GetBoolProperty("sys.boot_completed", false)) {
+
+// TODO(b/160001168): Handle boot completed logic in a separate class.
+std::atomic<bool> gIsBootCompleted = false;
+
+void markBootCompleted() { gIsBootCompleted = true; }
+
+void waitForBootStatus(Result<void> (&revert_fn)(const std::string&)) {
+  while (!gIsBootCompleted) {
     // Check for change in either crashing property or sys.boot_completed
     // Wait for updatable_crashing property change for most of the time
     // (arbitrary 30s), briefly check if boot has completed successfully,
@@ -58,15 +62,6 @@ void waitForBootStatus(Result<void> (&revert_fn)(const std::string&),
         return;
       }
     }
-  }
-  // Wait for boot to complete, and then run complete_fn.
-  // TODO(ioffe): this is a hack, instead we should have a binder call from
-  //  system_server into apexd when boot completes.
-  if (WaitForProperty("sys.boot_completed", "1", std::chrono::minutes(5))) {
-    complete_fn();
-    return;
-  } else {
-    LOG(ERROR) << "Boot never completed";
   }
 }
 }  // namespace apex

@@ -75,13 +75,15 @@ std::vector<ApexFile> getFactoryPackages();
 android::base::Result<void> abortStagedSession(const int session_id);
 android::base::Result<void> abortActiveSession();
 
-android::base::Result<ino_t> snapshotCeData(const int user_id,
-                                            const int rollback_id,
-                                            const std::string& apex_name);
+android::base::Result<void> snapshotCeData(const int user_id,
+                                           const int rollback_id,
+                                           const std::string& apex_name);
 android::base::Result<void> restoreCeData(const int user_id,
                                           const int rollback_id,
                                           const std::string& apex_name);
 android::base::Result<void> destroyDeSnapshots(const int rollback_id);
+android::base::Result<void> destroyCeSnapshots(const int user_id,
+                                               const int rollback_id);
 android::base::Result<void> destroyCeSnapshotsNotSpecified(
     int user_id, const std::vector<int>& retain_rollback_ids);
 
@@ -111,6 +113,7 @@ void onAllPackagesActivated();
 // Must only be called during boot (i.e. apexd.status is not "ready" or
 // "activated").
 void onAllPackagesReady();
+void onBootCompleted();
 void bootCompletedCleanup();
 int snapshotOrRestoreDeUserData();
 

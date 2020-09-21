@@ -1,9 +1,23 @@
 // List of clang-tidy checks that are reported as errors.
 // Please keep this list ordered lexicographically.
 tidy_errors = [
+  "android-*",
+  "bugprone-infinite-loop",
+  "bugprone-macro-parentheses",
+  "bugprone-misplaced-widening-cast",
+  "bugprone-move-forwarding-reference",
+  "bugprone-sizeof-container",
+  "bugprone-sizeof-expression",
+  "bugprone-string-constructor",
+  "bugprone-terminating-continue",
+  "bugprone-undefined-memory-manipulation",
+  "bugprone-undelegated-constructor",
+  "bugprone-unused-raii",
   "cert-err34-c",
   "google-default-arguments",
   "google-explicit-constructor",
+  "google-readability-avoid-underscore-in-googletest-name",
+  "google-readability-todo",
   "google-runtime-int",
   "google-runtime-member-string-references",
   "misc-move-const-arg",
@@ -19,7 +33,9 @@ tidy_errors = [
   "performance-move-const-arg",
   "performance-move-constructor-init",
   "performance-noexcept-move-constructor",
+  "performance-unnecessary-copy-initialization",
   "performance-unnecessary-value-param",
+  "readability-avoid-const-params-in-decls",
 ]
 
 cc_defaults {
@@ -69,6 +85,7 @@ cc_defaults {
     "libext2_uuid",
     "libverity_tree",
     "libvold_binder",
+    "libxml2",
   ],
   whole_static_libs: ["com.android.sysprop.apex"],
 }
@@ -135,6 +152,7 @@ cc_library_static {
     "apexd_verity.cpp",
   ],
   export_include_dirs: ["."],
+  generated_sources: ["apex-info-list"],
   // Don't add shared/static libs here; add to libapexd_defaults instead.
 }
 
@@ -223,7 +241,7 @@ cc_library_static {
 genrule {
   // Generates an apex which has a different manifest outside the filesystem
   // image.
-  name: "gen_bad_apexes",
+  name: "gen_manifest_mismatch_apex",
   out: ["apex.apexd_test_manifest_mismatch.apex"],
   srcs: [":apex.apexd_test"],
   tools: ["soong_zip", "zipalign", "conv_apex_manifest"],
@@ -234,6 +252,22 @@ genrule {
        "-o $(genDir)/unaligned.apex && " +
        "$(location zipalign) -f 4096 $(genDir)/unaligned.apex " +
        "$(genDir)/apex.apexd_test_manifest_mismatch.apex"
+}
+
+genrule {
+  // Generates an apex which has a different manifest outside the filesystem
+  // image.
+  name: "gen_manifest_mismatch_apex_no_hashtree",
+  out: ["apex.apexd_test_no_hashtree_manifest_mismatch.apex"],
+  srcs: [":apex.apexd_test_no_hashtree"],
+  tools: ["soong_zip", "zipalign", "conv_apex_manifest"],
+  cmd: "unzip -q $(in) -d $(genDir) && " +
+       "$(location conv_apex_manifest) setprop version 137 $(genDir)/apex_manifest.pb && " +
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) " +
+       "-s apex_manifest.pb -s apex_payload.img -s apex_pubkey " +
+       "-o $(genDir)/unaligned.apex && " +
+       "$(location zipalign) -f 4096 $(genDir)/unaligned.apex " +
+       "$(genDir)/apex.apexd_test_no_hashtree_manifest_mismatch.apex"
 }
 
 genrule {
@@ -276,7 +310,8 @@ cc_test {
     ":apex.apexd_test_prepostinstall.fail",
     ":apex.apexd_test_v2",
     ":apex.corrupted_b146895998",
-    ":gen_bad_apexes",
+    ":gen_manifest_mismatch_apex",
+    ":gen_manifest_mismatch_apex_no_hashtree",
     ":gen_corrupt_apex",
     ":com.android.apex.cts.shim.v1_prebuilt",
     ":com.android.apex.cts.shim.v2_prebuilt",
@@ -330,3 +365,10 @@ cc_test {
   test_config: "flattened_apex_test_config.xml",
 }
 
+xsd_config {
+  name: "apex-info-list",
+  srcs: ["ApexInfoList.xsd"],
+  package_name: "com.android.apex",
+  api_dir: "apex-info-list-api",
+  gen_writer: true,
+}

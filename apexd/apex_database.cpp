@@ -171,7 +171,7 @@ Result<void> PopulateLoopInfo(const BlockDevice& top_device,
 
 // This is not the right place to do this normalization, but proper solution
 // will require some refactoring first. :(
-// TODO(ioffe): introduce MountedApexDataBuilder and delegate all
+// TODO(b/158469911): introduce MountedApexDataBuilder and delegate all
 //  building/normalization logic to it.
 void NormalizeIfDeleted(MountedApexData* apex_data) {
   std::string_view full_path = apex_data->full_path;
@@ -255,7 +255,7 @@ void MountedApexDatabase::PopulateFromMounts() {
   std::string line;
   while (std::getline(mounts, line)) {
     auto [block, mountPoint] = parseMountInfo(line);
-    // TODO(jooyung): ignore tmp mount?
+    // TODO(b/158469914): distinguish between temp and non-temp mounts
     if (fs::path(mountPoint).parent_path() != kApexRoot) {
       continue;
     }

@@ -59,7 +59,8 @@ std::vector<uint8_t> HexToBin(const std::string& hex) {
 Result<void> GenerateHashTree(const ApexFile& apex,
                               const ApexVerityData& verity_data,
                               const std::string& hashtree_file) {
-  unique_fd fd(TEMP_FAILURE_RETRY(open(apex.GetPath().c_str(), O_RDONLY)));
+  unique_fd fd(
+      TEMP_FAILURE_RETRY(open(apex.GetPath().c_str(), O_RDONLY | O_CLOEXEC)));
   if (fd.get() == -1) {
     return ErrnoError() << "Failed to open " << apex.GetPath();
   }
@@ -105,8 +106,8 @@ Result<void> GenerateHashTree(const ApexFile& apex,
     return Error() << "Failed to build hashtree: root digest mismatch";
   }
 
-  unique_fd out_fd(TEMP_FAILURE_RETRY(
-      open(hashtree_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600)));
+  unique_fd out_fd(TEMP_FAILURE_RETRY(open(
+      hashtree_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600)));
   if (!builder->WriteHashTreeToFd(out_fd, 0)) {
     return Error() << "Failed to write hashtree to " << hashtree_file;
   }
@@ -115,7 +116,8 @@ Result<void> GenerateHashTree(const ApexFile& apex,
 
 Result<std::string> CalculateRootDigest(const std::string& hashtree_file,
                                         const ApexVerityData& verity_data) {
-  unique_fd fd(TEMP_FAILURE_RETRY(open(hashtree_file.c_str(), O_RDONLY)));
+  unique_fd fd(
+      TEMP_FAILURE_RETRY(open(hashtree_file.c_str(), O_RDONLY | O_CLOEXEC)));
   if (fd.get() == -1) {
     return ErrnoError() << "Failed to open " << hashtree_file;
   }

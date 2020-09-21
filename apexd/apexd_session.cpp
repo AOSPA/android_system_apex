@@ -259,5 +259,18 @@ std::ostream& operator<<(std::ostream& out, const ApexSession& session) {
              << "]";
 }
 
+void ApexSession::DeleteFinalizedSessions() {
+  auto sessions = GetSessions();
+  for (const ApexSession& session : sessions) {
+    if (!session.IsFinalized()) {
+      continue;
+    }
+    auto result = session.DeleteSession();
+    if (!result.ok()) {
+      LOG(WARNING) << "Failed to delete finalized session: " << session.GetId();
+    }
+  }
+}
+
 }  // namespace apex
 }  // namespace android

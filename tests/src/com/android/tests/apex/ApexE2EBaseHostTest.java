@@ -23,6 +23,7 @@ import static org.junit.Assume.assumeTrue;
 
 import android.platform.test.annotations.RequiresDevice;
 
+import com.android.tests.rollback.host.AbandonSessionsRule;
 import com.android.tests.util.ModuleTestUtils;
 import com.android.tradefed.config.Option;
 import com.android.tradefed.config.Option.Importance;
@@ -33,6 +34,7 @@ import com.android.tradefed.testtype.junit4.BaseHostJUnit4Test;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.io.File;
@@ -55,6 +57,9 @@ public abstract class ApexE2EBaseHostTest extends BaseHostJUnit4Test {
     /* protected so that derived tests can have access to test utils automatically */
     protected final ModuleTestUtils mUtils = new ModuleTestUtils(this);
 
+    @Rule
+    public AbandonSessionsRule mHostTestRule = new AbandonSessionsRule(this);
+
     @Option(name = OPTION_APEX_FILE_NAME,
             description = "The file name of the apex module.",
             importance = Importance.IF_UNSET,
@@ -65,14 +70,12 @@ public abstract class ApexE2EBaseHostTest extends BaseHostJUnit4Test {
     @Before
     public void setUp() throws Exception {
         assumeTrue("Updating APEX is not supported", mUtils.isApexUpdateSupported());
-        mUtils.abandonActiveStagedSession();
         uninstallAllApexes();
     }
 
     @After
     public void tearDown() throws Exception {
         assumeTrue("Updating APEX is not supported", mUtils.isApexUpdateSupported());
-        mUtils.abandonActiveStagedSession();
         uninstallAllApexes();
     }
 
@@ -113,7 +116,7 @@ public abstract class ApexE2EBaseHostTest extends BaseHostJUnit4Test {
     protected final ApexInfo installApex(String filename) throws Exception {
         File testAppFile = mUtils.getTestFile(filename);
 
-        String installResult = getDevice().installPackage(testAppFile, false, "--wait");
+        String installResult = mUtils.installStagedPackage(testAppFile);
         assertWithMessage("failed to install test app %s. Reason: %s", filename, installResult)
                 .that(installResult).isNull();
 

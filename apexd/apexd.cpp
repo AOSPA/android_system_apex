@@ -31,6 +31,7 @@
 #include "apexd_session.h"
 #include "apexd_utils.h"
 #include "apexd_verity.h"
+#include "com_android_apex.h"
 #include "string_log.h"
 
 #include <ApexProperties.sysprop.h>
@@ -99,7 +100,7 @@ using MountedApexData = MountedApexDatabase::MountedApexData;
 
 namespace {
 
-// These should be in-sync with system/sepolicy/public/property_contexts
+// These should be in-sync with system/sepolicy/private/property_contexts
 static constexpr const char* kApexStatusSysprop = "apexd.status";
 static constexpr const char* kApexStatusStarting = "starting";
 static constexpr const char* kApexStatusActivated = "activated";
@@ -267,13 +268,12 @@ Result<DmVerityDevice> createVerityDevice(const std::string& name,
   DeviceMapper& dm = DeviceMapper::Instance();
 
   if (dm.GetState(name) != DmDeviceState::INVALID) {
-    // TODO: since apexd tears down devices during unmount, can this happen?
+    // Delete dangling dm-device. This can happen if apexd fails to delete it
+    // while unmounting an apex.
     LOG(WARNING) << "Deleting existing dm device " << name;
-    const Result<void>& result = DeleteVerityDevice(name);
+    auto result = DeleteVerityDevice(name);
     if (!result.ok()) {
-      // TODO: should we fail instead?
-      LOG(ERROR) << "Failed to delete device " << name << " : "
-                 << result.error();
+      return result.error();
     }
   }
 
@@ -327,7 +327,8 @@ Result<void> readVerityDevice(const std::string& verity_device,
   static constexpr size_t kBufSize = 1024 * kBlockSize;
   std::vector<uint8_t> buffer(kBufSize);
 
-  unique_fd fd(TEMP_FAILURE_RETRY(open(verity_device.c_str(), O_RDONLY)));
+  unique_fd fd(
+      TEMP_FAILURE_RETRY(open(verity_device.c_str(), O_RDONLY | O_CLOEXEC)));
   if (fd.get() == -1) {
     return ErrnoError() << "Can't open " << verity_device;
   }
@@ -455,7 +456,7 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
       return readAheadStatus.error();
     }
   }
-  // TODO: consider moving this inside RunVerifyFnInsideTempMount.
+  // TODO(b/158467418): consider moving this inside RunVerifyFnInsideTempMount.
   if (mountOnVerity && verifyImage) {
     Result<void> verityStatus =
         readVerityDevice(blockDevice, (*verityData).desc->image_size);
@@ -511,9 +512,15 @@ Result<MountedApexData> VerifyAndTempMountPackage(
       return ErrnoError() << "Failed to unlink " << hashtree_file;
     }
   }
-  return MountPackageImpl(apex, mount_point, temp_device_name,
-                          GetHashTreeFileName(apex, /* is_new = */ true),
-                          /* verifyImage = */ true);
+  auto ret = MountPackageImpl(apex, mount_point, temp_device_name,
+                              hashtree_file, /* verifyImage = */ true);
+  if (!ret.ok()) {
+    LOG(DEBUG) << "Cleaning up " << hashtree_file;
+    if (TEMP_FAILURE_RETRY(unlink(hashtree_file.c_str())) != 0) {
+      PLOG(ERROR) << "Failed to unlink " << hashtree_file;
+    }
+  }
+  return ret;
 }
 
 Result<void> Unmount(const MountedApexData& data) {
@@ -617,20 +624,23 @@ Result<void> PostinstallPackages(const std::vector<ApexFile>& apexes) {
                                 &StagePostInstall);
 }
 
-template <typename RetType, typename Fn>
-RetType HandlePackages(const std::vector<std::string>& paths, Fn fn) {
-  // 1) Open all APEXes.
-  std::vector<ApexFile> apex_files;
+// Converts a list of apex file paths into a list of ApexFile objects
+//
+// Returns error when trying to open empty set of inputs.
+Result<std::vector<ApexFile>> OpenApexFiles(
+    const std::vector<std::string>& paths) {
+  if (paths.empty()) {
+    return Errorf("Empty set of inputs");
+  }
+  std::vector<ApexFile> ret;
   for (const std::string& path : paths) {
     Result<ApexFile> apex_file = ApexFile::Open(path);
     if (!apex_file.ok()) {
       return apex_file.error();
     }
-    apex_files.emplace_back(std::move(*apex_file));
+    ret.emplace_back(std::move(*apex_file));
   }
-
-  // 2) Dispatch.
-  return fn(apex_files);
+  return ret;
 }
 
 Result<void> ValidateStagingShimApex(const ApexFile& to) {
@@ -687,21 +697,20 @@ Result<void> VerifyPackageInstall(const ApexFile& apex_file) {
 template <typename VerifyApexFn>
 Result<std::vector<ApexFile>> verifyPackages(
     const std::vector<std::string>& paths, const VerifyApexFn& verify_apex_fn) {
-  if (paths.empty()) {
-    return Errorf("Empty set of inputs");
+  Result<std::vector<ApexFile>> apex_files = OpenApexFiles(paths);
+  if (!apex_files.ok()) {
+    return apex_files.error();
   }
+
   LOG(DEBUG) << "verifyPackages() for " << Join(paths, ',');
 
-  auto verify_fn = [&](std::vector<ApexFile>& apexes) {
-    for (const ApexFile& apex_file : apexes) {
-      Result<void> result = verify_apex_fn(apex_file);
-      if (!result.ok()) {
-        return Result<std::vector<ApexFile>>(result.error());
-      }
+  for (const ApexFile& apex_file : *apex_files) {
+    Result<void> result = verify_apex_fn(apex_file);
+    if (!result.ok()) {
+      return result.error();
     }
-    return Result<std::vector<ApexFile>>(std::move(apexes));
-  };
-  return HandlePackages<Result<std::vector<ApexFile>>>(paths, verify_fn);
+  }
+  return std::move(*apex_files);
 }
 
 Result<ApexFile> verifySessionDir(const int session_id) {
@@ -832,7 +841,6 @@ Result<void> RestoreActivePackages() {
   LOG(DEBUG) << "Restoring original permissions for "
              << kActiveApexPackagesDataDir;
   if (chmod(kActiveApexPackagesDataDir, stat_data.st_mode & ALLPERMS) != 0) {
-    // TODO: should we wipe out /data/apex/active if chmod fails?
     return ErrnoError() << "Failed to restore original permissions for "
                         << kActiveApexPackagesDataDir;
   }
@@ -899,12 +907,12 @@ namespace apexd_private {
 
 Result<MountedApexData> TempMountPackage(const ApexFile& apex,
                                          const std::string& mount_point) {
-  // TODO(ioffe): consolidate these two methods.
+  // TODO(b/139041058): consolidate these two methods.
   return android::apex::VerifyAndTempMountPackage(apex, mount_point);
 }
 
 Result<void> Unmount(const MountedApexData& data) {
-  // TODO(ioffe): consolidate these two methods.
+  // TODO(b/139041058): consolidate these two methods.
   return android::apex::Unmount(data);
 }
 
@@ -1044,13 +1052,87 @@ std::vector<ApexFile> getActivePackages() {
 
         Result<ApexFile> apexFile = ApexFile::Open(data.full_path);
         if (!apexFile.ok()) {
-          // TODO: Fail?
           return;
         }
         ret.emplace_back(std::move(*apexFile));
       });
 
   return ret;
+}
+
+Result<void> emitApexInfoList() {
+  // on a non-updatable device, we don't have APEX database to emit
+  if (!android::sysprop::ApexProperties::updatable().value_or(false)) {
+    return {};
+  }
+
+  std::vector<com::android::apex::ApexInfo> apexInfos;
+
+  auto convertToAutogen = [&apexInfos](const ApexFile& apex, bool isActive) {
+    auto preinstalledPath = getApexPreinstalledPath(apex.GetManifest().name());
+    std::optional<std::string> preinstalledModulePath;
+    if (preinstalledPath.ok()) {
+      preinstalledModulePath = *preinstalledPath;
+    }
+    com::android::apex::ApexInfo apexInfo(
+        apex.GetManifest().name(), apex.GetPath(), preinstalledModulePath,
+        apex.GetManifest().version(), apex.GetManifest().versionname(),
+        apex.IsBuiltin(), isActive);
+    apexInfos.emplace_back(apexInfo);
+  };
+
+  // Apexd runs both in "bootstrap" and "default" mount namespace.
+  // To expose /apex/apex-info-list.xml separately in each mount namespaces,
+  // we write /apex/.<namespace>-apex-info-list .xml file first and then
+  // bind mount it to the canonical file (/apex/apex-info-list.xml).
+  const std::string fileName =
+      fmt::format("{}/.{}-{}", kApexRoot, gBootstrap ? "bootstrap" : "default",
+                  kApexInfoList);
+
+  unique_fd fd(TEMP_FAILURE_RETRY(
+      open(fileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)));
+  if (fd.get() == -1) {
+    return ErrnoErrorf("Can't open {}", fileName);
+  }
+
+  const auto& active = getActivePackages();
+  for (const auto& apex : active) {
+    convertToAutogen(apex, true /* isActive */);
+  }
+  // we skip for non-activated built-in apexes in bootstrap mode
+  // in order to avoid boottime increase
+  if (!gBootstrap) {
+    for (const auto& apex : getFactoryPackages()) {
+      const auto& same_path = [&apex](const auto& o) {
+        return o.GetPath() == apex.GetPath();
+      };
+      if (std::find_if(active.begin(), active.end(), same_path) ==
+          active.end()) {
+        convertToAutogen(apex, false /* isActive */);
+      }
+    }
+  }
+
+  std::stringstream xml;
+  com::android::apex::ApexInfoList apexInfoList(apexInfos);
+  com::android::apex::write(xml, apexInfoList);
+
+  if (!android::base::WriteStringToFd(xml.str(), fd)) {
+    return ErrnoErrorf("Can't write to {}", fileName);
+  }
+
+  fd.reset();
+
+  const std::string mountPoint = fmt::format("{}/{}", kApexRoot, kApexInfoList);
+  if (access(mountPoint.c_str(), F_OK) != 0) {
+    close(open(mountPoint.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+               0644));
+  }
+  if (mount(fileName.c_str(), mountPoint.c_str(), nullptr, MS_BIND, nullptr) ==
+      -1) {
+    return ErrnoErrorf("Can't bind mount {} to {}", fileName, mountPoint);
+  }
+  return RestoreconPath(fileName);
 }
 
 namespace {
@@ -1117,7 +1199,7 @@ Result<void> abortStagedSession(int session_id) {
   }
 }
 
-// TODO(ioffe): cleanup activation logic to avoid unnecessary scanning.
+// TODO(b/139041058): cleanup activation logic to avoid unnecessary scanning.
 namespace {
 
 Result<std::vector<ApexFile>> ScanApexFiles(const char* apex_package_dir) {
@@ -1184,7 +1266,7 @@ bool ShouldActivateApexOnData(const ApexFile& apex) {
 
 Result<void> scanPackagesDirAndActivate(const char* apex_package_dir) {
   auto apexes = ScanApexFiles(apex_package_dir);
-  if (!apexes) {
+  if (!apexes.ok()) {
     return apexes.error();
   }
   return ActivateApexPackages(*apexes);
@@ -1249,7 +1331,7 @@ void snapshotOrRestoreDeIfNeeded(const std::string& base_dir,
     for (const auto& apex_name : session.GetApexNames()) {
       Result<void> result =
           snapshotDataDirectory(base_dir, session.GetRollbackId(), apex_name);
-      if (!result) {
+      if (!result.ok()) {
         LOG(ERROR) << "Snapshot failed for " << apex_name << ": "
                    << result.error();
       }
@@ -1282,7 +1364,7 @@ void snapshotOrRestoreDeSysData() {
 int snapshotOrRestoreDeUserData() {
   auto user_dirs = GetDeUserDirs();
 
-  if (!user_dirs) {
+  if (!user_dirs.ok()) {
     LOG(ERROR) << "Error reading dirs " << user_dirs.error();
     return 1;
   }
@@ -1298,17 +1380,10 @@ int snapshotOrRestoreDeUserData() {
   return 0;
 }
 
-Result<ino_t> snapshotCeData(const int user_id, const int rollback_id,
-                             const std::string& apex_name) {
+Result<void> snapshotCeData(const int user_id, const int rollback_id,
+                            const std::string& apex_name) {
   auto base_dir = StringPrintf("%s/%d", kCeDataDir, user_id);
-  Result<void> result = snapshotDataDirectory(base_dir, rollback_id, apex_name);
-  if (!result) {
-    return result.error();
-  }
-  auto ce_snapshot_path =
-      StringPrintf("%s/%s/%d/%s", base_dir.c_str(), kApexSnapshotSubDir,
-                   rollback_id, apex_name.c_str());
-  return get_path_inode(ce_snapshot_path);
+  return snapshotDataDirectory(base_dir, rollback_id, apex_name);
 }
 
 Result<void> restoreCeData(const int user_id, const int rollback_id,
@@ -1323,7 +1398,7 @@ Result<void> migrateSessionsDirIfNeeded() {
   namespace fs = std::filesystem;
   auto from_path = std::string(kApexDataDir) + "/sessions";
   auto exists = PathExists(from_path);
-  if (!exists) {
+  if (!exists.ok()) {
     return Error() << "Failed to access " << from_path << ": "
                    << exists.error();
   }
@@ -1357,7 +1432,7 @@ Result<void> destroyDeSnapshots(const int rollback_id) {
   destroySnapshots(kDeSysDataDir, rollback_id);
 
   auto user_dirs = GetDeUserDirs();
-  if (!user_dirs) {
+  if (!user_dirs.ok()) {
     return Error() << "Error reading user dirs " << user_dirs.error();
   }
 
@@ -1366,6 +1441,12 @@ Result<void> destroyDeSnapshots(const int rollback_id) {
   }
 
   return {};
+}
+
+Result<void> destroyCeSnapshots(const int user_id, const int rollback_id) {
+  auto path = StringPrintf("%s/%d/%s/%d", kCeDataDir, user_id,
+                           kApexSnapshotSubDir, rollback_id);
+  return DeleteDir(path);
 }
 
 /**
@@ -1403,11 +1484,11 @@ void restorePreRestoreSnapshotsIfPresent(const std::string& base_dir,
   auto pre_restore_snapshot_path =
       StringPrintf("%s/%s/%d%s", base_dir.c_str(), kApexSnapshotSubDir,
                    session.GetRollbackId(), kPreRestoreSuffix);
-  if (PathExists(pre_restore_snapshot_path)) {
+  if (PathExists(pre_restore_snapshot_path).ok()) {
     for (const auto& apex_name : session.GetApexNames()) {
       Result<void> result = restoreDataDirectory(
           base_dir, session.GetRollbackId(), apex_name, true /* pre_restore */);
-      if (!result) {
+      if (!result.ok()) {
         LOG(ERROR) << "Restore of pre-restore snapshot failed for " << apex_name
                    << ": " << result.error();
       }
@@ -1419,7 +1500,7 @@ void restoreDePreRestoreSnapshotsIfPresent(const ApexSession& session) {
   restorePreRestoreSnapshotsIfPresent(kDeSysDataDir, session);
 
   auto user_dirs = GetDeUserDirs();
-  if (!user_dirs) {
+  if (!user_dirs.ok()) {
     LOG(ERROR) << "Error reading user dirs to restore pre-restore snapshots"
                << user_dirs.error();
   }
@@ -1435,7 +1516,7 @@ void deleteDePreRestoreSnapshots(const std::string& base_dir,
       StringPrintf("%s/%s/%d%s", base_dir.c_str(), kApexSnapshotSubDir,
                    session.GetRollbackId(), kPreRestoreSuffix);
   Result<void> result = DeleteDir(pre_restore_snapshot_path);
-  if (!result) {
+  if (!result.ok()) {
     LOG(ERROR) << "Deletion of pre-restore snapshot failed: " << result.error();
   }
 }
@@ -1444,7 +1525,7 @@ void deleteDePreRestoreSnapshots(const ApexSession& session) {
   deleteDePreRestoreSnapshots(kDeSysDataDir, session);
 
   auto user_dirs = GetDeUserDirs();
-  if (!user_dirs) {
+  if (!user_dirs.ok()) {
     LOG(ERROR) << "Error reading user dirs to delete pre-restore snapshots"
                << user_dirs.error();
   }
@@ -1452,6 +1533,11 @@ void deleteDePreRestoreSnapshots(const ApexSession& session) {
   for (const auto& user_dir : *user_dirs) {
     deleteDePreRestoreSnapshots(user_dir, session);
   }
+}
+
+void onBootCompleted() {
+  markBootCompleted();
+  bootCompletedCleanup();
 }
 
 void scanStagedSessionsDirAndStage() {
@@ -1542,9 +1628,9 @@ void scanStagedSessionsDirAndStage() {
     }
 
     for (const auto& apex : apexes) {
-      // TODO: Avoid opening ApexFile repeatedly.
+      // TODO(b/158470836): Avoid opening ApexFile repeatedly.
       Result<ApexFile> apex_file = ApexFile::Open(apex);
-      if (!apex_file) {
+      if (!apex_file.ok()) {
         LOG(ERROR) << "Cannot open apex file during staging: " << apex;
         continue;
       }
@@ -1570,19 +1656,21 @@ void scanStagedSessionsDirAndStage() {
 }
 
 Result<void> preinstallPackages(const std::vector<std::string>& paths) {
-  if (paths.empty()) {
-    return Errorf("Empty set of inputs");
+  Result<std::vector<ApexFile>> apex_files = OpenApexFiles(paths);
+  if (!apex_files.ok()) {
+    return apex_files.error();
   }
   LOG(DEBUG) << "preinstallPackages() for " << Join(paths, ',');
-  return HandlePackages<Result<void>>(paths, PreinstallPackages);
+  return PreinstallPackages(*apex_files);
 }
 
 Result<void> postinstallPackages(const std::vector<std::string>& paths) {
-  if (paths.empty()) {
-    return Errorf("Empty set of inputs");
+  Result<std::vector<ApexFile>> apex_files = OpenApexFiles(paths);
+  if (!apex_files.ok()) {
+    return apex_files.error();
   }
   LOG(DEBUG) << "postinstallPackages() for " << Join(paths, ',');
-  return HandlePackages<Result<void>>(paths, PostinstallPackages);
+  return PostinstallPackages(*apex_files);
 }
 
 namespace {
@@ -1665,7 +1753,6 @@ Result<void> stagePackages(const std::vector<std::string>& tmpPaths) {
     }
 
     if (link(apex_file->GetPath().c_str(), dest_path.c_str()) != 0) {
-      // TODO: Get correct binder error status.
       return ErrnoError() << "Unable to link " << apex_file->GetPath() << " to "
                           << dest_path;
     }
@@ -1687,10 +1774,10 @@ Result<void> unstagePackages(const std::vector<std::string>& paths) {
   }
   LOG(DEBUG) << "unstagePackages() for " << Join(paths, ',');
 
-  // TODO: to make unstage safer, we can copy to be unstaged packages to a
-  // temporary folder and restore state from it in case unstagePackages fails.
-
   for (const std::string& path : paths) {
+    if (isPathForBuiltinApexes(path)) {
+      return Error() << "Can't uninstall pre-installed apex " << path;
+    }
     if (access(path.c_str(), F_OK) != 0) {
       return ErrnoError() << "Can't access " << path;
     }
@@ -1729,8 +1816,7 @@ Result<void> revertActiveSessions(const std::string& crashing_native_process) {
     }
     auto status =
         session.UpdateStateAndCommit(SessionState::REVERT_IN_PROGRESS);
-    if (!status) {
-      // TODO: should we continue with a revert?
+    if (!status.ok()) {
       return Error() << "Revert of session " << session
                      << " failed : " << status.error();
     }
@@ -1742,7 +1828,7 @@ Result<void> revertActiveSessions(const std::string& crashing_native_process) {
       for (auto& session : activeSessions) {
         auto st = session.UpdateStateAndCommit(SessionState::REVERT_FAILED);
         LOG(DEBUG) << "Marking " << session << " as failed to revert";
-        if (!st) {
+        if (!st.ok()) {
           LOG(WARNING) << "Failed to mark session " << session
                        << " as failed to revert : " << st.error();
         }
@@ -1761,7 +1847,7 @@ Result<void> revertActiveSessions(const std::string& crashing_native_process) {
     }
 
     auto status = session.UpdateStateAndCommit(SessionState::REVERTED);
-    if (!status) {
+    if (!status.ok()) {
       LOG(WARNING) << "Failed to mark session " << session
                    << " as reverted : " << status.error();
     }
@@ -1819,6 +1905,8 @@ int onBootstrap() {
       return 1;
     }
   }
+
+  onAllPackagesActivated();
   LOG(INFO) << "Bootstrapping done";
   return 0;
 }
@@ -1920,7 +2008,6 @@ void onStart() {
                << kActiveApexPackagesDataDir << " : " << status.error();
     Result<void> revert_status = revertActiveSessionsAndReboot("");
     if (!revert_status.ok()) {
-      // TODO: should we kill apexd in this case?
       LOG(ERROR) << "Failed to revert : " << revert_status.error()
                  << kActiveApexPackagesDataDir << " : " << ret.error();
     }
@@ -1938,7 +2025,6 @@ void onStart() {
     }
     if (auto activate = ActivateApexPackages(*scan_status); !activate.ok()) {
       // This should never happen. Like **really** never.
-      // TODO: should we kill apexd in this case?
       LOG(ERROR) << "Failed to activate packages from " << dir << " : "
                  << activate.error();
     }
@@ -1949,6 +2035,17 @@ void onStart() {
 }
 
 void onAllPackagesActivated() {
+  auto result = emitApexInfoList();
+  if (!result.ok()) {
+    LOG(ERROR) << "cannot emit apex info list: " << result.error();
+  }
+
+  // Because apexd in bootstrap mode runs in blocking mode
+  // we don't have to set as activated.
+  if (gBootstrap) {
+    return;
+  }
+
   // Set a system property to let other components know that APEXs are
   // activated, but are not yet ready to be used. init is expected to wait
   // for this status before performing configuration based on activated
@@ -2148,6 +2245,7 @@ void RemoveOrphanedApexes() {
 void bootCompletedCleanup() {
   UnmountDanglingMounts();
   RemoveOrphanedApexes();
+  ApexSession::DeleteFinalizedSessions();
 }
 
 int unmountAll() {

@@ -123,6 +123,7 @@ class ApexServiceTest : public ::testing::Test {
         vold_service_->supportsCheckpoint(&supports_fs_checkpointing_);
     ASSERT_TRUE(IsOk(status));
     CleanUp();
+    service_->recollectPreinstalledData(kApexPackageBuiltinDirs);
   }
 
   void TearDown() override { CleanUp(); }
@@ -296,9 +297,8 @@ class ApexServiceTest : public ::testing::Test {
         "-f",
         file,
     };
-    std::string error_msg;
-    int res = ForkAndRun(args, &error_msg);
-    CHECK_EQ(0, res) << error_msg;
+    auto res = ForkAndRun(args);
+    CHECK(res.ok()) << res.error();
 
     std::string data;
     CHECK(android::base::ReadFileToString(file, &data));
@@ -526,7 +526,8 @@ Result<void> ReadDevice(const std::string& block_device) {
   static constexpr size_t kBufSize = 1024 * kBlockSize;
   std::vector<uint8_t> buffer(kBufSize);
 
-  unique_fd fd(TEMP_FAILURE_RETRY(open(block_device.c_str(), O_RDONLY)));
+  unique_fd fd(
+      TEMP_FAILURE_RETRY(open(block_device.c_str(), O_RDONLY | O_CLOEXEC)));
   if (fd.get() == -1) {
     return ErrnoError() << "Can't open " << block_device;
   }
@@ -718,7 +719,7 @@ TEST_F(ApexServiceTest, SubmitStagedSessionFailDoesNotLeakTempVerityDevices) {
   }
 }
 
-TEST_F(ApexServiceTest, StageSuccess_ClearsPreviouslyActivePackage) {
+TEST_F(ApexServiceTest, StageSuccessClearsPreviouslyActivePackage) {
   PrepareTestApexForInstall installer1(GetTestFile("apex.apexd_test_v2.apex"));
   PrepareTestApexForInstall installer2(
       GetTestFile("apex.apexd_test_different_app.apex"));
@@ -782,7 +783,6 @@ TEST_F(ApexServiceTest, MultiStageSuccess) {
   }
   ASSERT_EQ(std::string("com.android.apex.test_package"), installer.package);
 
-  // TODO: Add second test. Right now, just use a separate version.
   PrepareTestApexForInstall installer2(GetTestFile("apex.apexd_test_v2.apex"));
   if (!installer2.Prepare()) {
     return;
@@ -840,18 +840,10 @@ TEST_F(ApexServiceTest, SnapshotCeData) {
   ASSERT_TRUE(
       RegularFileExists("/data/misc_ce/0/apexdata/apex.apexd_test/hello.txt"));
 
-  int64_t result;
-  service_->snapshotCeData(0, 123456, "apex.apexd_test", &result);
+  service_->snapshotCeData(0, 123456, "apex.apexd_test");
 
   ASSERT_TRUE(RegularFileExists(
       "/data/misc_ce/0/apexrollback/123456/apex.apexd_test/hello.txt"));
-
-  // Check that the return value is the inode of the snapshot directory.
-  struct stat buf;
-  memset(&buf, 0, sizeof(buf));
-  ASSERT_EQ(0,
-            stat("/data/misc_ce/0/apexrollback/123456/apex.apexd_test", &buf));
-  ASSERT_EQ(int64_t(buf.st_ino), result);
 }
 
 TEST_F(ApexServiceTest, RestoreCeData) {
@@ -878,7 +870,7 @@ TEST_F(ApexServiceTest, RestoreCeData) {
       DirExists("/data/misc_ce/0/apexrollback/123456/apex.apexd_test"));
 }
 
-TEST_F(ApexServiceTest, DestroyDeSnapshots_DeSys) {
+TEST_F(ApexServiceTest, DestroyDeSnapshotsDeSys) {
   CreateDir("/data/misc/apexrollback/123456");
   CreateDir("/data/misc/apexrollback/123456/my.apex");
   CreateFile("/data/misc/apexrollback/123456/my.apex/hello.txt");
@@ -896,7 +888,7 @@ TEST_F(ApexServiceTest, DestroyDeSnapshots_DeSys) {
   ASSERT_FALSE(DirExists("/data/misc/apexrollback/123456"));
 }
 
-TEST_F(ApexServiceTest, DestroyDeSnapshots_DeUser) {
+TEST_F(ApexServiceTest, DestroyDeSnapshotsDeUser) {
   CreateDir("/data/misc_de/0/apexrollback/123456");
   CreateDir("/data/misc_de/0/apexrollback/123456/my.apex");
   CreateFile("/data/misc_de/0/apexrollback/123456/my.apex/hello.txt");
@@ -912,6 +904,31 @@ TEST_F(ApexServiceTest, DestroyDeSnapshots_DeUser) {
   ASSERT_FALSE(RegularFileExists(
       "/data/misc_de/0/apexrollback/123456/my.apex/hello.txt"));
   ASSERT_FALSE(DirExists("/data/misc_de/0/apexrollback/123456"));
+}
+
+TEST_F(ApexServiceTest, DestroyCeSnapshots) {
+  CreateDir("/data/misc_ce/0/apexrollback/123456");
+  CreateDir("/data/misc_ce/0/apexrollback/123456/apex.apexd_test");
+  CreateFile("/data/misc_ce/0/apexrollback/123456/apex.apexd_test/file.txt");
+
+  CreateDir("/data/misc_ce/0/apexrollback/77777");
+  CreateDir("/data/misc_ce/0/apexrollback/77777/apex.apexd_test");
+  CreateFile("/data/misc_ce/0/apexrollback/77777/apex.apexd_test/thing.txt");
+
+  ASSERT_TRUE(RegularFileExists(
+      "/data/misc_ce/0/apexrollback/123456/apex.apexd_test/file.txt"));
+  ASSERT_TRUE(RegularFileExists(
+      "/data/misc_ce/0/apexrollback/77777/apex.apexd_test/thing.txt"));
+
+  android::binder::Status st = service_->destroyCeSnapshots(0, 123456);
+  ASSERT_TRUE(IsOk(st));
+  // Should be OK if the directory doesn't exist.
+  st = service_->destroyCeSnapshots(1, 123456);
+  ASSERT_TRUE(IsOk(st));
+
+  ASSERT_TRUE(RegularFileExists(
+      "/data/misc_ce/0/apexrollback/77777/apex.apexd_test/thing.txt"));
+  ASSERT_FALSE(DirExists("/data/misc_ce/0/apexrollback/123456"));
 }
 
 TEST_F(ApexServiceTest, DestroyCeSnapshotsNotSpecified) {
@@ -1327,7 +1344,7 @@ TEST_F(ApexServiceTest, NoHashtreeApexStagePackagesMovesHashtree) {
   auto read_fn = [](const std::string& path) -> std::vector<uint8_t> {
     static constexpr size_t kBufSize = 4096;
     std::vector<uint8_t> buffer(kBufSize);
-    unique_fd fd(TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY)));
+    unique_fd fd(TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_CLOEXEC)));
     if (fd.get() == -1) {
       PLOG(ERROR) << "Failed to open " << path;
       ADD_FAILURE();
@@ -1983,6 +2000,42 @@ TEST_F(ApexServiceTest, AbortStagedSessionActivatedFail) {
                                              SessionInfoEq(expected2)));
 }
 
+// Only finalized sessions should be deleted on DeleteFinalizedSessions()
+TEST_F(ApexServiceTest, DeleteFinalizedSessions) {
+  // Fetch list of all session state
+  std::vector<SessionState::State> states;
+  for (int i = SessionState::State_MIN; i < SessionState::State_MAX; i++) {
+    if (!SessionState::State_IsValid(i)) {
+      continue;
+    }
+    states.push_back(SessionState::State(i));
+  }
+
+  // For every session state, create a new session. This is to verify we only
+  // delete sessions in final state.
+  auto nonFinalSessions = 0u;
+  for (auto i = 0u; i < states.size(); i++) {
+    auto session = ApexSession::CreateSession(230 + i);
+    SessionState::State state = states[i];
+    ASSERT_TRUE(IsOk(session->UpdateStateAndCommit(state)));
+    if (!session->IsFinalized()) {
+      nonFinalSessions++;
+    }
+  }
+  std::vector<ApexSession> sessions = ApexSession::GetSessions();
+  ASSERT_EQ(states.size(), sessions.size());
+
+  // Now try cleaning up all finalized sessions
+  ApexSession::DeleteFinalizedSessions();
+  sessions = ApexSession::GetSessions();
+  ASSERT_EQ(nonFinalSessions, sessions.size());
+
+  // Verify only finalized sessions have been deleted
+  for (auto& session : sessions) {
+    ASSERT_FALSE(session.IsFinalized());
+  }
+}
+
 TEST_F(ApexServiceTest, BackupActivePackages) {
   if (supports_fs_checkpointing_) {
     GTEST_SKIP() << "Can't run if filesystem checkpointing is enabled";
@@ -2165,6 +2218,18 @@ TEST_F(ApexServiceTest, UnstagePackagesFail) {
   ASSERT_TRUE(IsOk(active_packages));
   ASSERT_THAT(*active_packages,
               UnorderedElementsAre(installer1.test_installed_file));
+}
+
+TEST_F(ApexServiceTest, UnstagePackagesFailPreInstalledApex) {
+  auto status = service_->unstagePackages(
+      {"/system/apex/com.android.apex.cts.shim.apex"});
+  ASSERT_FALSE(IsOk(status));
+  const std::string& error_message =
+      std::string(status.exceptionMessage().c_str());
+  ASSERT_THAT(error_message,
+              HasSubstr("Can't uninstall pre-installed apex "
+                        "/system/apex/com.android.apex.cts.shim.apex"));
+  ASSERT_TRUE(RegularFileExists("/system/apex/com.android.apex.cts.shim.apex"));
 }
 
 class ApexServiceRevertTest : public ApexServiceTest {
@@ -2684,7 +2749,7 @@ TEST_F(ApexServiceTest, SubmitStagedSessionCorruptApexFails) {
   ASSERT_FALSE(IsOk(service_->submitStagedSession(params, &list)));
 }
 
-TEST_F(ApexServiceTest, SubmitStagedSessionCorruptApexFails_b146895998) {
+TEST_F(ApexServiceTest, SubmitStagedSessionCorruptApexFailsB146895998) {
   PrepareTestApexForInstall installer(GetTestFile("corrupted_b146895998.apex"),
                                       "/data/app-staging/session_71",
                                       "staging_data_file");
@@ -2699,7 +2764,7 @@ TEST_F(ApexServiceTest, SubmitStagedSessionCorruptApexFails_b146895998) {
   ASSERT_FALSE(IsOk(service_->submitStagedSession(params, &list)));
 }
 
-TEST_F(ApexServiceTest, StageCorruptApexFails_b146895998) {
+TEST_F(ApexServiceTest, StageCorruptApexFailsB146895998) {
   PrepareTestApexForInstall installer(GetTestFile("corrupted_b146895998.apex"));
 
   if (!installer.Prepare()) {
@@ -2783,6 +2848,25 @@ TEST_F(ApexServiceActivationSuccessTest, RemountPackagesPackageOnDataChanged) {
   ASSERT_EQ(installer_->test_installed_file, active_apex->modulePath);
 }
 
+TEST_F(ApexServiceTest,
+       SubmitStagedSessionFailsManifestMismatchCleansUpHashtree) {
+  PrepareTestApexForInstall installer(
+      GetTestFile("apex.apexd_test_no_hashtree_manifest_mismatch.apex"),
+      "/data/app-staging/session_83", "staging_data_file");
+  if (!installer.Prepare()) {
+    return;
+  }
+
+  ApexInfoList list;
+  ApexSessionParams params;
+  params.sessionId = 83;
+  ASSERT_FALSE(IsOk(service_->submitStagedSession(params, &list)));
+  std::string hashtree_file = std::string(kApexHashTreeDir) + "/" +
+                              installer.package + "@" +
+                              std::to_string(installer.version) + ".new";
+  ASSERT_FALSE(RegularFileExists(hashtree_file));
+}
+
 class LogTestToLogcat : public ::testing::EmptyTestEventListener {
   void OnTestStart(const ::testing::TestInfo& test_info) override {
 #ifdef __ANDROID__
@@ -2791,7 +2875,7 @@ class LogTestToLogcat : public ::testing::EmptyTestEventListener {
     using base::StringPrintf;
     base::LogdLogger l;
     std::string msg =
-        StringPrintf("=== %s::%s (%s:%d)", test_info.test_case_name(),
+        StringPrintf("=== %s::%s (%s:%d)", test_info.test_suite_name(),
                      test_info.name(), test_info.file(), test_info.line());
     l(LogId::MAIN, LogSeverity::INFO, "ApexTestCases", __FILE__, __LINE__,
       msg.c_str());

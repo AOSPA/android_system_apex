@@ -23,6 +23,7 @@ import apex_build_info_pb2
 import argparse
 import hashlib
 import os
+import pkgutil
 import re
 import shlex
 import shutil
@@ -499,7 +500,12 @@ def CreateApex(args, work_dir):
     cmd.extend(['-E', 'hash_seed=' + uu])
     cmd.append(img_file)
     cmd.append(str(size_in_mb) + 'M')
-    RunCommand(cmd, args.verbose, {'E2FSPROGS_FAKE_TIME': '1'})
+    with tempfile.NamedTemporaryFile(dir=work_dir, suffix="mke2fs.conf") as conf_file:
+      conf_data = pkgutil.get_data('apexer', 'mke2fs.conf')
+      conf_file.write(conf_data)
+      conf_file.flush()
+      RunCommand(cmd, args.verbose,
+          {"MKE2FS_CONFIG": conf_file.name, 'E2FSPROGS_FAKE_TIME': '1'})
 
     # Compile the file context into the binary form
     compiled_file_contexts = os.path.join(work_dir, 'file_contexts.bin')

@@ -35,6 +35,7 @@ TEST(MountedApexDataTest, LinearOrder) {
   constexpr const char* kDm[] = {"dm1", "dm2", "dm3"};
   constexpr const char* kHashtreeLoopName[] = {"hash-loop1", "hash-loop2",
                                                "hash-loop3"};
+  // NOLINTNEXTLINE(bugprone-sizeof-expression)
   constexpr size_t kCount = arraysize(kLoopName) * arraysize(kPath) *
                             arraysize(kMount) * arraysize(kDm);
 

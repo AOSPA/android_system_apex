@@ -24,6 +24,7 @@
 #include <linux/loop.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -151,7 +152,18 @@ Result<LoopbackDeviceUniqueFd> createLoopDevice(const std::string& target,
    */
   unique_fd target_fd(open(target.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECT));
   if (target_fd.get() == -1) {
-    return ErrnoError() << "Failed to open " << target;
+    struct statfs stbuf;
+    int saved_errno = errno;
+    // let's give another try with buffered I/O for EROFS
+    if (statfs(target.c_str(), &stbuf) != 0 ||
+        stbuf.f_type != EROFS_SUPER_MAGIC_V1) {
+        return Error(saved_errno) << "Failed to open " << target;
+    }
+    LOG(WARNING) << "Fallback to buffered I/O for " << target;
+    target_fd.reset(open(target.c_str(), O_RDONLY | O_CLOEXEC));
+    if (target_fd.get() == -1) {
+      return ErrnoError() << "Failed to open " << target;
+    }
   }
   LoopbackDeviceUniqueFd device_fd;
   {

@@ -95,18 +95,8 @@ TEST(ApexFileTest, VerifyApexVerity) {
             data.salt);
   EXPECT_EQ(
       std::string(
-          "8e841019e41e8c40bca6dd6304cbf163ea257ba0a268304832c4105eba1c2747"),
+          "1e34cb628350a49f802333ef4e403b69244634d82f37ed399aef264ba8cf7913"),
       data.root_digest);
-}
-
-// TODO: May consider packaging a debug key in debug builds (again).
-TEST(ApexFileTest, DISABLED_VerifyApexVerityNoKeyDir) {
-  const std::string filePath = testDataDir + "apex.apexd_test.apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_RESULT_OK(apexFile);
-
-  auto verity_or = apexFile->VerifyApexVerity();
-  ASSERT_FALSE(verity_or.ok());
 }
 
 TEST(ApexFileTest, VerifyApexVerityNoKeyInst) {
@@ -132,7 +122,7 @@ TEST(ApexFileTest, GetBundledPublicKey) {
   EXPECT_EQ(keyContent, apexFile->GetBundledPublicKey());
 }
 
-TEST(ApexFileTest, CorrutedApex_b146895998) {
+TEST(ApexFileTest, CorrutedApexB146895998) {
   const std::string apex_path = testDataDir + "corrupted_b146895998.apex";
   Result<ApexFile> apex = ApexFile::Open(apex_path);
   ASSERT_RESULT_OK(apex);

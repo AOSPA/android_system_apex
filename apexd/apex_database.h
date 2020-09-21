@@ -211,8 +211,8 @@ class MountedApexDatabase {
   // Note: using std::maps to
   //         a) so we do not have to worry about iterator invalidation.
   //         b) do not have to const_cast (over std::set)
-  // TODO: Eventually this structure (and functions) need to be guarded by
-  // locks.
+  // TODO(b/158467745): This structure (and functions) need to be guarded by
+  //   locks.
   std::map<std::string, std::map<MountedApexData, bool>> mounted_apexes_;
 };
 

@@ -48,4 +48,11 @@ message ApexManifest {
 
   // List of native libs which this apex uses from other apexes or system.
   repeated string requireNativeLibs = 8;
+
+  // List of JNI libs.
+  // linkerconfig/libnativeloader use this field so that java libraries can
+  // load JNI libraries in the same apex.
+  // This is supposed to be filled by the build system with libraries which are
+  // marked as "is_jni: true" from the list of "native_shared_libs".
+  repeated string jniLibs = 9;
 }

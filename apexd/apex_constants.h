@@ -50,5 +50,7 @@ static constexpr const char* kApexPackageSuffix = ".apex";
 
 static constexpr const char* kManifestFilenameJson = "apex_manifest.json";
 static constexpr const char* kManifestFilenamePb = "apex_manifest.pb";
+
+static constexpr const char* kApexInfoList = "apex-info-list.xml";
 }  // namespace apex
 }  // namespace android

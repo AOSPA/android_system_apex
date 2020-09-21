@@ -120,6 +120,14 @@ public class ModuleTestUtils {
         throw new IOException("Cannot find " + testFileName);
     }
 
+    /**
+     * Installs packages using staged install flow and waits for pre-reboot verification to complete
+     */
+    public String installStagedPackage(File pkg) throws Exception {
+        return mTest.getDevice().installPackage(pkg, false,
+                "--staged", "--wait-for-staged-ready");
+    }
+
     private String runCmd(String cmd) {
         CLog.d("About to run command: %s", cmd);
         CommandResult result = mRunUtil.runTimedCmd(1000 * 60 * 5, cmd.split("\\s+"));
@@ -169,24 +177,6 @@ public class ModuleTestUtils {
     }
 
     /**
-     * Abandons any staged session that is marked {@code ready}
-     */
-    public void abandonActiveStagedSession() throws DeviceNotAvailableException {
-        CommandResult res = mTest.getDevice().executeShellV2Command("pm list staged-sessions "
-                + "--only-ready --only-parent --only-sessionid");
-        assertThat(res.getStderr()).isEqualTo("");
-        String activeSessionId = res.getStdout();
-        if (activeSessionId != null && !activeSessionId.equals("")) {
-            res = mTest.getDevice().executeShellV2Command("pm install-abandon "
-                    + activeSessionId);
-            if (!res.getStderr().equals("") || res.getStatus() != CommandStatus.SUCCESS) {
-                CLog.d("Failed to abandon session " + activeSessionId
-                        + " Error: " + res.getStderr());
-            }
-        }
-    }
-
-    /**
      * Uninstalls a shim apex only if its latest version is installed on /data partition
      *
      * <p>This is purely to optimize tests run time, since uninstalling an apex requires a reboot.
@@ -196,14 +186,16 @@ public class ModuleTestUtils {
             return;
         }
 
+        final ITestDevice.ApexInfo shim = getShimApex();
+        if (shim.sourceDir.startsWith("/system")) {
+            CLog.i("Skipping uninstall of " + shim.sourceDir + ". Reason: pre-installed version");
+            return;
+        }
+        CLog.i("Uninstalling shim apex");
         final String errorMessage = mTest.getDevice().uninstallPackage(SHIM);
         if (errorMessage == null) {
-            CLog.i("Uninstalling shim apex");
             mTest.getDevice().reboot();
         } else {
-            // Most likely we tried to uninstall system version and failed. It should be fine to
-            // continue tests.
-            // TODO(b/140813980): use ApexInfo.sourceDir to decide whenever to issue an uninstall.
             CLog.w("Failed to uninstall shim APEX: " + errorMessage);
         }
         assertThat(getShimApex().versionCode).isEqualTo(1L);
