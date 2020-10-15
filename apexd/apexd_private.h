@@ -21,6 +21,7 @@
 
 #include <android-base/result.h>
 #include "apex_database.h"
+#include "apex_file.h"
 #include "apex_manifest.h"
 
 namespace android {
@@ -38,10 +39,13 @@ std::string GetActiveMountPoint(const ApexManifest& manifest);
 
 android::base::Result<void> BindMount(const std::string& target,
                                       const std::string& source);
+android::base::Result<MountedApexDatabase::MountedApexData>
+getTempMountedApexData(const std::string& package);
 android::base::Result<MountedApexDatabase::MountedApexData> TempMountPackage(
     const ApexFile& apex, const std::string& mount_point);
 android::base::Result<void> Unmount(
     const MountedApexDatabase::MountedApexData& data);
+android::base::Result<void> UnmountTempMount(const ApexFile& apex);
 
 }  // namespace apexd_private
 }  // namespace apex

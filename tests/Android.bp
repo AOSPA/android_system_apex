@@ -74,6 +74,7 @@ java_library_host {
     static_libs: [
         "module_test_util",
         "frameworks-base-hostutils",
+        "cts-install-lib-host",
     ],
     libs: [
         "tradefed",
@@ -141,7 +142,7 @@ java_test_host {
     name: "apex_rollback_tests",
     srcs:  ["src/**/ApexRollbackTests.java", "src/**/ApexTestUtils.java"],
     libs: ["tradefed", "truth-prebuilt"],
-    static_libs: ["module_test_util", "frameworks-base-hostutils"],
+    static_libs: ["module_test_util", "frameworks-base-hostutils", "cts-install-lib-host"],
     test_config: "apex-rollback-tests.xml",
     test_suites: ["general-tests"],
 
@@ -165,7 +166,8 @@ java_test_host {
         "module_test_util",
         "truth-prebuilt",
         "apex_manifest_proto_java",
-        "frameworks-base-hostutils"
+        "frameworks-base-hostutils",
+        "cts-install-lib-host"
     ],
     test_config: "apexd-host-tests.xml",
     test_suites: ["general-tests"],

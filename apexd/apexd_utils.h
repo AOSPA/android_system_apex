@@ -36,8 +36,8 @@
 #include <cutils/android_reboot.h>
 
 #include "apex_constants.h"
-#include "string_log.h"
 
+using android::base::EndsWith;
 using android::base::ErrnoError;
 using android::base::Error;
 using android::base::Result;
@@ -229,6 +229,39 @@ inline Result<std::vector<std::string>> GetSubdirs(const std::string& path) {
 
 inline Result<std::vector<std::string>> GetDeUserDirs() {
   return GetSubdirs(kDeNDataDir);
+}
+
+inline Result<std::vector<std::string>> FindApexFilesByName(
+    const std::string& path) {
+  auto filter_fn = [](const std::filesystem::directory_entry& entry) {
+    std::error_code ec;
+    if (entry.is_regular_file(ec) &&
+        EndsWith(entry.path().filename().string(), kApexPackageSuffix)) {
+      return true;  // APEX file, take.
+    }
+    return false;
+  };
+  return ReadDir(path, filter_fn);
+}
+
+inline Result<std::vector<std::string>> FindApexes(
+    const std::vector<std::string>& paths) {
+  std::vector<std::string> result;
+  for (const auto& path : paths) {
+    auto exist = PathExists(path);
+    if (!exist.ok()) {
+      return exist.error();
+    }
+    if (!*exist) continue;
+
+    const auto& apexes = FindApexFilesByName(path);
+    if (!apexes.ok()) {
+      return apexes;
+    }
+
+    result.insert(result.end(), apexes->begin(), apexes->end());
+  }
+  return result;
 }
 
 }  // namespace apex

@@ -21,6 +21,8 @@ import static com.google.common.truth.Truth.assertWithMessage;
 
 import static org.junit.Assume.assumeTrue;
 
+import android.cts.install.lib.host.InstallUtilsHost;
+
 import com.android.apex.ApexInfo;
 import com.android.apex.XmlParser;
 import com.android.tests.rollback.host.AbandonSessionsRule;
@@ -51,23 +53,24 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
     private static final String SHIM_APEX_PATH = "/system/apex/com.android.apex.cts.shim.apex";
 
     private final ModuleTestUtils mTestUtils = new ModuleTestUtils(this);
+    private final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
 
     @Rule
     public AbandonSessionsRule mHostTestRule = new AbandonSessionsRule(this);
 
     @Before
     public void setUp() throws Exception {
-        mTestUtils.uninstallShimApexIfNecessary();
+        mHostUtils.uninstallShimApexIfNecessary();
     }
 
     @After
     public void tearDown() throws Exception {
-        mTestUtils.uninstallShimApexIfNecessary();
+        mHostUtils.uninstallShimApexIfNecessary();
     }
 
     @Test
     public void testOrphanedApexIsNotActivated() throws Exception {
-        assumeTrue("Device does not support updating APEX", mTestUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
         try {
             assertThat(getDevice().pushFile(mTestUtils.getTestFile("apex.apexd_test_v2.apex"),
@@ -87,7 +90,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
     }
     @Test
     public void testApexWithoutPbIsNotActivated() throws Exception {
-        assumeTrue("Device does not support updating APEX", mTestUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
         final String testApexFile = "com.android.apex.cts.shim.v2_no_pb.apex";
         try {
@@ -109,7 +112,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
 
     @Test
     public void testRemountApex() throws Exception {
-        assumeTrue("Device does not support updating APEX", mTestUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
         final File oldFile = getDevice().pullFile(SHIM_APEX_PATH);
         try {
@@ -140,7 +143,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
     @Test
     public void testApexWithoutPbIsNotActivated_ProductPartitionHasOlderVersion()
             throws Exception {
-        assumeTrue("Device does not support updating APEX", mTestUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
         try {
@@ -181,7 +184,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
     @Test
     public void testApexWithoutPbIsNotActivated_ProductPartitionHasNewerVersion()
             throws Exception {
-        assumeTrue("Device does not support updating APEX", mTestUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
         try {
@@ -221,7 +224,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
 
     @Test
     public void testApexInfoListIsValid() throws Exception {
-        assumeTrue("Device does not support updating APEX", mTestUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
         try (FileInputStream fis = new FileInputStream(
@@ -251,7 +254,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
      */
     @Test
     public void testApexSessionStateUnchangedBeforeReboot() throws Exception {
-        assumeTrue("Device does not support updating APEX", mTestUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
         File apexFile = mTestUtils.getTestFile("com.android.apex.cts.shim.v2.apex");

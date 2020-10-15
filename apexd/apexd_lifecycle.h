@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,30 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_APEXD_APEXD_PROP_H_
-#define ANDROID_APEXD_APEXD_PROP_H_
+#ifndef ANDROID_APEXD_APEXD_LIFECYCLE_H_
+#define ANDROID_APEXD_APEXD_LIFECYCLE_H_
 
 #include <android-base/result.h>
 
 namespace android {
 namespace apex {
 
-void markBootCompleted();
-void waitForBootStatus(
-    android::base::Result<void> (&rollback_fn)(const std::string&));
+class ApexdLifecycle {
+ private:
+  ApexdLifecycle(){};
+  std::atomic<bool> boot_completed_;
 
+ public:
+  static ApexdLifecycle& getInstance() {
+    static ApexdLifecycle instance;
+    return instance;
+  }
+  bool isBooting();
+  void markBootCompleted();
+  void waitForBootStatus(
+      android::base::Result<void> (&rollback_fn)(const std::string&));
+};
 }  // namespace apex
 }  // namespace android
 
-#endif  // ANDROID_APEXD_APEXD_PROP_H
+#endif  // ANDROID_APEXD_APEXD_LIFECYCLE_H

@@ -24,6 +24,7 @@
 #include <android-base/result.h>
 
 #include "apex_constants.h"
+#include "apex_database.h"
 #include "apex_file.h"
 
 namespace android {
@@ -88,8 +89,6 @@ android::base::Result<void> destroyCeSnapshotsNotSpecified(
     int user_id, const std::vector<int>& retain_rollback_ids);
 
 int onBootstrap();
-// Small helper function to tell if device is currently booting.
-bool isBooting();
 // Sets the values of gVoldService and gInFsCheckpointMode.
 void initializeVold(CheckpointInterface* checkpoint_service);
 // Initializes in-memory state (e.g. pre-installed data, activated apexes).
@@ -118,6 +117,9 @@ void bootCompletedCleanup();
 int snapshotOrRestoreDeUserData();
 
 int unmountAll();
+
+android::base::Result<MountedApexDatabase::MountedApexData>
+getTempMountedApexData(const std::string& package);
 
 // Optimistically tries to remount as many APEX packages as possible.
 // For more documentation see corresponding binder call in IApexService.aidl.

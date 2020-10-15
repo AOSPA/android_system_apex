@@ -59,8 +59,8 @@
 #include "apexd_session.h"
 #include "apexd_test_utils.h"
 #include "apexd_utils.h"
-
 #include "session_state.pb.h"
+#include "string_log.h"
 
 using apex::proto::SessionState;
 
@@ -1401,7 +1401,13 @@ TEST_F(ApexServiceTest, GetFactoryPackages) {
   ASSERT_TRUE(factoryPackages->size() > 0);
 
   for (const ApexInfo& package : *factoryPackages) {
-    ASSERT_TRUE(isPathForBuiltinApexes(package.modulePath));
+    bool is_builtin = false;
+    for (const auto& dir : kApexPackageBuiltinDirs) {
+      if (StartsWith(package.modulePath, dir)) {
+        is_builtin = true;
+      }
+    }
+    ASSERT_TRUE(is_builtin);
   }
 }
 

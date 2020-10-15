@@ -22,6 +22,10 @@
 #include <unordered_set>
 
 #include <android-base/logging.h>
+#include <android-base/result.h>
+
+using android::base::Error;
+using android::base::Result;
 
 namespace android {
 namespace apex {
@@ -40,17 +44,21 @@ class MountedApexDatabase {
     std::string hashtree_loop_name;
     // Whenever apex file specified in full_path was deleted.
     bool deleted;
+    // Whether the mount is a temp mount or not.
+    bool is_temp_mount;
 
     MountedApexData() {}
     MountedApexData(const std::string& loop_name, const std::string& full_path,
                     const std::string& mount_point,
                     const std::string& device_name,
-                    const std::string& hashtree_loop_name)
+                    const std::string& hashtree_loop_name,
+                    bool is_temp_mount = false)
         : loop_name(loop_name),
           full_path(full_path),
           mount_point(mount_point),
           device_name(device_name),
-          hashtree_loop_name(hashtree_loop_name) {}
+          hashtree_loop_name(hashtree_loop_name),
+          is_temp_mount(is_temp_mount) {}
 
     inline bool operator<(const MountedApexData& rhs) const {
       int compare_val = loop_name.compare(rhs.loop_name);
@@ -134,7 +142,8 @@ class MountedApexDatabase {
   }
 
   inline void RemoveMountedApex(const std::string& package,
-                                const std::string& full_path) {
+                                const std::string& full_path,
+                                bool match_temp_mounts = false) {
     auto it = mounted_apexes_.find(package);
     if (it == mounted_apexes_.end()) {
       return;
@@ -143,7 +152,8 @@ class MountedApexDatabase {
     auto& pkg_map = it->second;
 
     for (auto pkg_it = pkg_map.begin(); pkg_it != pkg_map.end(); ++pkg_it) {
-      if (pkg_it->first.full_path == full_path) {
+      if (pkg_it->first.full_path == full_path &&
+          pkg_it->first.is_temp_mount == match_temp_mounts) {
         pkg_map.erase(pkg_it);
         return;
       }
@@ -184,22 +194,27 @@ class MountedApexDatabase {
   }
 
   template <typename T>
-  inline void ForallMountedApexes(const std::string& package,
-                                  const T& handler) const {
+  inline void ForallMountedApexes(const std::string& package, const T& handler,
+                                  bool match_temp_mounts = false) const {
     auto it = mounted_apexes_.find(package);
     if (it == mounted_apexes_.end()) {
       return;
     }
     for (auto& pair : it->second) {
-      handler(pair.first, pair.second);
+      if (pair.first.is_temp_mount == match_temp_mounts) {
+        handler(pair.first, pair.second);
+      }
     }
   }
 
   template <typename T>
-  inline void ForallMountedApexes(const T& handler) const {
+  inline void ForallMountedApexes(const T& handler,
+                                  bool match_temp_mounts = false) const {
     for (const auto& pkg : mounted_apexes_) {
       for (const auto& pair : pkg.second) {
-        handler(pkg.first, pair.first, pair.second);
+        if (pair.first.is_temp_mount == match_temp_mounts) {
+          handler(pkg.first, pair.first, pair.second);
+        }
       }
     }
   }

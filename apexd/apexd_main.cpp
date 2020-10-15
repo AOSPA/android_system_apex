@@ -24,13 +24,15 @@
 
 #include "apexd.h"
 #include "apexd_checkpoint_vold.h"
+#include "apexd_lifecycle.h"
 #include "apexd_prepostinstall.h"
-#include "apexd_prop.h"
 #include "apexservice.h"
 
 #include <android-base/properties.h>
 
 namespace {
+android::apex::ApexdLifecycle& lifecycle =
+    android::apex::ApexdLifecycle::getInstance();
 
 int HandleSubcommand(char** argv) {
   if (strcmp("--pre-install", argv[1]) == 0) {
@@ -137,7 +139,7 @@ int main(int /*argc*/, char** argv) {
   }
   android::apex::initialize(vold_service);
 
-  bool booting = android::apex::isBooting();
+  bool booting = lifecycle.isBooting();
   if (booting) {
     android::apex::migrateSessionsDirIfNeeded();
     android::apex::onStart();
@@ -153,8 +155,7 @@ int main(int /*argc*/, char** argv) {
     // the "--snapshotde" subcommand is received and snapshot/restore is
     // complete.
     android::apex::onAllPackagesActivated();
-    android::apex::waitForBootStatus(
-        android::apex::revertActiveSessionsAndReboot);
+    lifecycle.waitForBootStatus(android::apex::revertActiveSessionsAndReboot);
   }
 
   android::apex::binder::AllowServiceShutdown();

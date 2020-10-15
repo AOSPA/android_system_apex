@@ -16,12 +16,9 @@
 
 package com.android.tests.util;
 
-import static com.google.common.truth.Truth.assertThat;
-
 import com.android.tradefed.build.BuildInfoKey.BuildInfoFileKey;
 import com.android.tradefed.build.IBuildInfo;
 import com.android.tradefed.device.DeviceNotAvailableException;
-import com.android.tradefed.device.ITestDevice;
 import com.android.tradefed.device.ITestDevice.ApexInfo;
 import com.android.tradefed.log.LogUtil.CLog;
 import com.android.tradefed.testtype.junit4.BaseHostJUnit4Test;
@@ -44,7 +41,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 public class ModuleTestUtils {
-    private static final String SHIM = "com.android.apex.cts.shim";
     private static final String APEX_INFO_EXTRACT_REGEX =
             ".*package:\\sname='(\\S+)\\'\\sversionCode='(\\d+)'\\s.*";
 
@@ -124,8 +120,7 @@ public class ModuleTestUtils {
      * Installs packages using staged install flow and waits for pre-reboot verification to complete
      */
     public String installStagedPackage(File pkg) throws Exception {
-        return mTest.getDevice().installPackage(pkg, false,
-                "--staged", "--wait-for-staged-ready");
+        return mTest.getDevice().installPackage(pkg, false, "--staged");
     }
 
     private String runCmd(String cmd) {
@@ -174,44 +169,6 @@ public class ModuleTestUtils {
         }
         Assert.assertTrue("Staged session wasn't ready in " + WAIT_FOR_SESSION_READY_TTL,
                 sessionReady);
-    }
-
-    /**
-     * Uninstalls a shim apex only if its latest version is installed on /data partition
-     *
-     * <p>This is purely to optimize tests run time, since uninstalling an apex requires a reboot.
-     */
-    public void uninstallShimApexIfNecessary() throws Exception {
-        if (!isApexUpdateSupported()) {
-            return;
-        }
-
-        final ITestDevice.ApexInfo shim = getShimApex();
-        if (shim.sourceDir.startsWith("/system")) {
-            CLog.i("Skipping uninstall of " + shim.sourceDir + ". Reason: pre-installed version");
-            return;
-        }
-        CLog.i("Uninstalling shim apex");
-        final String errorMessage = mTest.getDevice().uninstallPackage(SHIM);
-        if (errorMessage == null) {
-            mTest.getDevice().reboot();
-        } else {
-            CLog.w("Failed to uninstall shim APEX: " + errorMessage);
-        }
-        assertThat(getShimApex().versionCode).isEqualTo(1L);
-    }
-
-    private ITestDevice.ApexInfo getShimApex() throws DeviceNotAvailableException {
-        return mTest.getDevice().getActiveApexes().stream().filter(
-                apex -> apex.name.equals(SHIM)).findAny().orElseThrow(
-                    () -> new AssertionError("Can't find " + SHIM));
-    }
-
-    /**
-     * Return {@code true} if and only if device supports updating apex.
-     */
-    public boolean isApexUpdateSupported() throws Exception {
-        return mTest.getDevice().getBooleanProperty("ro.apex.updatable", false);
     }
 
     private boolean isReadyNotApplied(String sessionInfo) {

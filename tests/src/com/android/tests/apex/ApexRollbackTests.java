@@ -22,14 +22,15 @@ import static com.google.common.truth.Truth.assertWithMessage;
 import static org.junit.Assume.assumeFalse;
 import static org.junit.Assume.assumeTrue;
 
+import android.cts.install.lib.host.InstallUtilsHost;
+
 import com.android.tests.rollback.host.AbandonSessionsRule;
 import com.android.tests.util.ModuleTestUtils;
+import com.android.tradefed.device.DeviceNotAvailableException;
 import com.android.tradefed.device.ITestDevice;
 import com.android.tradefed.device.ITestDevice.ApexInfo;
 import com.android.tradefed.testtype.DeviceJUnit4ClassRunner;
 import com.android.tradefed.testtype.junit4.BaseHostJUnit4Test;
-import com.android.tradefed.util.CommandResult;
-import com.android.tradefed.util.CommandStatus;
 
 import org.junit.After;
 import org.junit.Before;
@@ -47,12 +48,13 @@ import java.util.Set;
 @RunWith(DeviceJUnit4ClassRunner.class)
 public class ApexRollbackTests extends BaseHostJUnit4Test {
     private final ModuleTestUtils mUtils = new ModuleTestUtils(this);
+    private final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
     @Rule
     public AbandonSessionsRule mHostTestRule = new AbandonSessionsRule(this);
 
     @Before
     public void setUp() throws Exception {
-        mUtils.uninstallShimApexIfNecessary();
+        mHostUtils.uninstallShimApexIfNecessary();
         resetProperties();
     }
 
@@ -62,7 +64,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @After
     public void tearDown() throws Exception {
-        mUtils.uninstallShimApexIfNecessary();
+        mHostUtils.uninstallShimApexIfNecessary();
         resetProperties();
     }
 
@@ -83,7 +85,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testAutomaticBootLoopRecovery() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         ITestDevice device = getDevice();
         // Skip this test if there is already crashing process on device
         boolean hasCrashingProcess =
@@ -136,8 +138,8 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testSessionNotRevertedWithCheckpointingDisabled() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
-        assumeFalse("Fs checkpointing is enabled", supportsFsCheckpointing());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
+        assumeFalse("Fs checkpointing is enabled", mHostUtils.isCheckpointSupported());
 
         File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
@@ -178,8 +180,8 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testCheckpointingRevertsSession() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
-        assumeTrue("Device doesn't support fs checkpointing", supportsFsCheckpointing());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
+        assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
         File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
@@ -220,8 +222,8 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testRebootingOnceDoesNotRevertSession() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
-        assumeTrue("Device doesn't support fs checkpointing", supportsFsCheckpointing());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
+        assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
         File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
@@ -264,7 +266,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testApexdDoesNotBootLoopDeviceIfThereIsNothingToRevert() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         // On next boot trigger setprop sys.init.updatable_crashing 1, which will trigger a
         // revert mechanism in apexd. Since there is nothing to revert, this should be a no-op
         // and device will boot successfully.
@@ -283,10 +285,10 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testFailingUserspaceReboot_doesNotRevertUpdate() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device doesn't support userspace reboot",
                 getDevice().getBooleanProperty("init.userspace_reboot.is_supported", false));
-        assumeTrue("Device doesn't support fs checkpointing", supportsFsCheckpointing());
+        assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
         File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
         // Simulate failure in userspace reboot by triggering a full reboot in the middle of the
@@ -312,10 +314,10 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testUserspaceRebootFailedShutdownSequence_doesNotRevertUpdate() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device doesn't support userspace reboot",
                 getDevice().getBooleanProperty("init.userspace_reboot.is_supported", false));
-        assumeTrue("Device doesn't support fs checkpointing", supportsFsCheckpointing());
+        assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
         File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
         // Simulate failure in userspace reboot by triggering a full reboot in the middle of the
@@ -345,10 +347,10 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testUserspaceRebootFailedRemount_revertsUpdate() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device doesn't support userspace reboot",
                 getDevice().getBooleanProperty("init.userspace_reboot.is_supported", false));
-        assumeTrue("Device doesn't support fs checkpointing", supportsFsCheckpointing());
+        assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
         File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
         // Simulate failure in userspace reboot by triggering a full reboot in the middle of the
@@ -374,7 +376,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
      */
     @Test
     public void testBootCompletedCleanupHappensEvenWhenThereIsCrashingProcess() throws Exception {
-        assumeTrue("Device does not support updating APEX", mUtils.isApexUpdateSupported());
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
         try {
             // On next boot trigger setprop sys.init.updatable_crashing 1, which will trigger a
@@ -400,11 +402,78 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         }
     }
 
+    /**
+     * Test reason for revert is properly logged during boot loops
+     */
+    @Test
+    public void testReasonForRevertIsLoggedDuringBootloop() throws Exception {
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
+        assumeTrue("Fs checkpointing is enabled", mHostUtils.isCheckpointSupported());
 
-    private boolean supportsFsCheckpointing() throws Exception {
-        CommandResult result = getDevice().executeShellV2Command("sm supports-checkpoint");
-        assertWithMessage("Failed to check if fs checkpointing is supported : %s",
-                result.getStderr()).that(result.getStatus()).isEqualTo(CommandStatus.SUCCESS);
-        return "true".equals(result.getStdout().trim());
+        ITestDevice device = getDevice();
+        // Skip this test if there is already crashing process on device
+        final boolean hasCrashingProcess =
+                device.getBooleanProperty("sys.init.updatable_crashing", false);
+        final String crashingProcess =
+                device.getProperty("sys.init.updatable_crashing_process_name");
+        assumeFalse(
+                "Device already has a crashing process: " + crashingProcess, hasCrashingProcess);
+        final File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+
+        // To simulate an apex update that causes a boot loop, we install a
+        // trigger_watchdog.rc file that arranges for a trigger_watchdog.sh
+        // script to be run at boot. The trigger_watchdog.sh script checks if
+        // the apex version specified in the property
+        // persist.debug.trigger_watchdog.apex is installed. If so,
+        // trigger_watchdog.sh repeatedly kills the system server causing a
+        // boot loop.
+        assertThat(device.setProperty("persist.debug.trigger_watchdog.apex",
+                "com.android.apex.cts.shim@2")).isTrue();
+        final String error = mUtils.installStagedPackage(apexFile);
+        assertThat(error).isNull();
+
+        final String sessionIdToCheck = device.executeShellCommand("pm get-stagedsessions "
+                + "--only-ready --only-parent --only-sessionid").trim();
+        assertThat(sessionIdToCheck).isNotEmpty();
+
+        // After we reboot the device, we expect the device to go into boot
+        // loop from trigger_watchdog.sh. Native watchdog should detect and
+        // report the boot loop, causing apexd to roll back to the previous
+        // version of the apex and force reboot. When the device comes up
+        // after the forced reboot, trigger_watchdog.sh will see the different
+        // version of the apex and refrain from forcing a boot loop, so the
+        // device will be recovered.
+        device.reboot();
+
+        final ApexInfo ctsShimV1 = new ApexInfo("com.android.apex.cts.shim", 1L);
+        final ApexInfo ctsShimV2 = new ApexInfo("com.android.apex.cts.shim", 2L);
+        final Set<ApexInfo> activatedApexes = device.getActiveApexes();
+        assertThat(activatedApexes).contains(ctsShimV1);
+        assertThat(activatedApexes).doesNotContain(ctsShimV2);
+
+        // Assert that a session has failed with the expected reason
+        final String stagedSessionString = getStagedSession(sessionIdToCheck);
+        assertThat(stagedSessionString).contains("Reason for revert");
+
+    }
+
+    String getStagedSession(String sessionId) throws DeviceNotAvailableException {
+        final String[] lines = getDevice().executeShellCommand(
+                "pm get-stagedsessions --only-parent").split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].contains("sessionId = " + sessionId)) {
+                // Join all lines realted to this session
+                final StringBuilder result = new StringBuilder(lines[i]);
+                for (int j = i + 1; j < lines.length; j++) {
+                    if (lines[j].contains("sessionId = ")) {
+                        // A new session block has started
+                        break;
+                    }
+                    result.append(lines[j]);
+                }
+                return result.toString();
+            }
+        }
+        return "";
     }
 }
