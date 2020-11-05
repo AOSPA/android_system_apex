@@ -183,16 +183,6 @@ class MountedApexDatabase {
     LOG(FATAL) << "Did not find " << package << " " << full_path;
   }
 
-  inline void UnsetLatestForall(const std::string& package) {
-    auto it = mounted_apexes_.find(package);
-    if (it == mounted_apexes_.end()) {
-      return;
-    }
-    for (auto& data : it->second) {
-      data.second = false;
-    }
-  }
-
   template <typename T>
   inline void ForallMountedApexes(const std::string& package, const T& handler,
                                   bool match_temp_mounts = false) const {

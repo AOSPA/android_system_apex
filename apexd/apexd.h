@@ -106,7 +106,7 @@ void onStart();
 // "activated".
 // Must only be called during boot (i.e. apexd.status is not "ready" or
 // "activated").
-void onAllPackagesActivated();
+void onAllPackagesActivated(bool is_bootstrap);
 // Notifies system that apexes are ready by setting apexd.status property to
 // "ready".
 // Must only be called during boot (i.e. apexd.status is not "ready" or

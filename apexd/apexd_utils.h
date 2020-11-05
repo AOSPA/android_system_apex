@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <dirent.h>
@@ -262,6 +263,76 @@ inline Result<std::vector<std::string>> FindApexes(
     result.insert(result.end(), apexes->begin(), apexes->end());
   }
   return result;
+}
+
+// Returns first path between |first_dir| and |second_dir| that correspond to a
+// existing directory. Returns error if neither |first_dir| nor |second_dir|
+// correspond to an existing directory.
+inline Result<std::string> FindFirstExistingDirectory(
+    const std::string& first_dir, const std::string& second_dir) {
+  struct stat stat_buf;
+  if (stat(first_dir.c_str(), &stat_buf) != 0) {
+    PLOG(WARNING) << "Failed to stat " << first_dir;
+    if (stat(second_dir.c_str(), &stat_buf) != 0) {
+      return ErrnoError() << "Failed to stat " << second_dir;
+    }
+    if (!S_ISDIR(stat_buf.st_mode)) {
+      return Error() << second_dir << " is not a directory";
+    }
+    return second_dir;
+  }
+
+  if (S_ISDIR(stat_buf.st_mode)) {
+    return first_dir;
+  }
+  LOG(WARNING) << first_dir << " is not a directory";
+
+  if (stat(second_dir.c_str(), &stat_buf) != 0) {
+    return ErrnoError() << "Failed to stat " << second_dir;
+  }
+  if (!S_ISDIR(stat_buf.st_mode)) {
+    return Error() << second_dir << " is not a directory";
+  }
+  return second_dir;
+}
+
+// Copies all entries under |from| directory to |to| directory, and then them.
+// Leaving |from| empty.
+inline Result<void> MoveDir(const std::string& from, const std::string& to) {
+  struct stat stat_buf;
+  if (stat(to.c_str(), &stat_buf) != 0) {
+    return ErrnoError() << "Failed to stat " << to;
+  }
+  if (!S_ISDIR(stat_buf.st_mode)) {
+    return Error() << to << " is not a directory";
+  }
+
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  auto it = fs::directory_iterator(from, ec);
+  if (ec) {
+    return Error() << "Can't read " << from << " : " << ec.message();
+  }
+
+  for (const auto& end = fs::directory_iterator(); it != end;) {
+    auto from_path = it->path();
+    it.increment(ec);
+    if (ec) {
+      return Error() << "Can't read " << from << " : " << ec.message();
+    }
+    auto to_path = to / from_path.filename();
+    fs::copy(from_path, to_path, fs::copy_options::recursive, ec);
+    if (ec) {
+      return Error() << "Failed to copy " << from_path << " to " << to_path
+                     << " : " << ec.message();
+    }
+    fs::remove_all(from_path, ec);
+    if (ec) {
+      return Error() << "Failed to delete " << from_path << " : "
+                     << ec.message();
+    }
+  }
+  return {};
 }
 
 }  // namespace apex

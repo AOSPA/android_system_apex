@@ -115,7 +115,6 @@ bool gInFsCheckpointMode = false;
 
 static constexpr size_t kLoopDeviceSetupAttempts = 3u;
 
-bool gBootstrap = false;
 static const std::vector<std::string> kBootstrapApexes = ([]() {
   std::vector<std::string> ret = {
       "com.android.art",
@@ -638,7 +637,7 @@ Result<void> PrePostinstallPackages(const std::vector<ApexFile>& apexes,
       Result<MountedApexData> mount_data =
           apexd_private::getTempMountedApexData(apex.GetManifest().name());
       if (!mount_data.ok()) {
-        mount_data = apexd_private::TempMountPackage(apex, mount_point);
+        mount_data = VerifyAndTempMountPackage(apex, mount_point);
         if (!mount_data.ok()) {
           return mount_data.error();
         }
@@ -951,12 +950,6 @@ Result<void> MountPackage(const ApexFile& apex, const std::string& mountPoint) {
 
 namespace apexd_private {
 
-Result<MountedApexData> TempMountPackage(const ApexFile& apex,
-                                         const std::string& mount_point) {
-  // TODO(b/139041058): consolidate these two methods.
-  return android::apex::VerifyAndTempMountPackage(apex, mount_point);
-}
-
 Result<void> UnmountTempMount(const ApexFile& apex) {
   const ApexManifest& manifest = apex.GetManifest();
   LOG(VERBOSE) << "Unmounting all temp mounts for package " << manifest.name();
@@ -992,11 +985,6 @@ Result<MountedApexData> getTempMountedApexData(const std::string& package) {
     return mount_data;
   }
   return Error() << "No temp mount data found for " << package;
-}
-
-Result<void> Unmount(const MountedApexData& data) {
-  // TODO(b/139041058): consolidate these two methods.
-  return android::apex::Unmount(data);
 }
 
 bool IsMounted(const std::string& full_path) {
@@ -1036,10 +1024,6 @@ Result<void> resumeRevertIfNeeded() {
 
 Result<void> activatePackageImpl(const ApexFile& apex_file) {
   const ApexManifest& manifest = apex_file.GetManifest();
-
-  if (gBootstrap && !isBootstrapApex(apex_file)) {
-    return {};
-  }
 
   // See whether we think it's active, and do not allow to activate the same
   // version. Also detect whether this is the highest version.
@@ -1143,7 +1127,7 @@ std::vector<ApexFile> getActivePackages() {
   return ret;
 }
 
-Result<void> emitApexInfoList() {
+Result<void> emitApexInfoList(bool is_bootstrap) {
   // on a non-updatable device, we don't have APEX database to emit
   if (!android::sysprop::ApexProperties::updatable().value_or(false)) {
     return {};
@@ -1172,8 +1156,8 @@ Result<void> emitApexInfoList() {
   // we write /apex/.<namespace>-apex-info-list .xml file first and then
   // bind mount it to the canonical file (/apex/apex-info-list.xml).
   const std::string fileName =
-      fmt::format("{}/.{}-{}", kApexRoot, gBootstrap ? "bootstrap" : "default",
-                  kApexInfoList);
+      fmt::format("{}/.{}-{}", kApexRoot,
+                  is_bootstrap ? "bootstrap" : "default", kApexInfoList);
 
   unique_fd fd(TEMP_FAILURE_RETRY(
       open(fileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)));
@@ -1187,7 +1171,7 @@ Result<void> emitApexInfoList() {
   }
   // we skip for non-activated built-in apexes in bootstrap mode
   // in order to avoid boottime increase
-  if (!gBootstrap) {
+  if (!is_bootstrap) {
     for (const auto& apex : getFactoryPackages()) {
       const auto& same_path = [&apex](const auto& o) {
         return o.GetPath() == apex.GetPath();
@@ -1482,30 +1466,7 @@ Result<void> restoreCeData(const int user_id, const int rollback_id,
 //  Migrates sessions directory from /data/apex/sessions to
 //  /metadata/apex/sessions, if necessary.
 Result<void> migrateSessionsDirIfNeeded() {
-  namespace fs = std::filesystem;
-  auto from_path = std::string(kApexDataDir) + "/sessions";
-  auto exists = PathExists(from_path);
-  if (!exists.ok()) {
-    return Error() << "Failed to access " << from_path << ": "
-                   << exists.error();
-  }
-  if (!*exists) {
-    LOG(DEBUG) << from_path << " does not exist. Nothing to migrate.";
-    return {};
-  }
-  auto to_path = kApexSessionsDir;
-  std::error_code error_code;
-  fs::copy(from_path, to_path, fs::copy_options::recursive, error_code);
-  if (error_code) {
-    return Error() << "Failed to copy old sessions directory"
-                   << error_code.message();
-  }
-  fs::remove_all(from_path, error_code);
-  if (error_code) {
-    return Error() << "Failed to delete old sessions directory "
-                   << error_code.message();
-  }
-  return {};
+  return ApexSession::MigrateToMetadataSessionsDir();
 }
 
 Result<void> destroySnapshots(const std::string& base_dir,
@@ -1628,7 +1589,7 @@ void onBootCompleted() {
 }
 
 void scanStagedSessionsDirAndStage() {
-  LOG(INFO) << "Scanning " << kApexSessionsDir
+  LOG(INFO) << "Scanning " << ApexSession::GetSessionsDir()
             << " looking for sessions to be activated.";
 
   auto sessionsToActivate =
@@ -1963,8 +1924,6 @@ Result<void> revertActiveSessionsAndReboot(
 }
 
 int onBootstrap() {
-  gBootstrap = true;
-
   Result<void> preAllocate = preAllocateLoopDevices();
   if (!preAllocate.ok()) {
     LOG(ERROR) << "Failed to pre-allocate loop devices : "
@@ -1980,22 +1939,27 @@ int onBootstrap() {
     return 1;
   }
 
-  // Activate built-in APEXes for processes launched before /data is mounted.
+  // Find all bootstrap apexes
+  std::vector<ApexFile> bootstrap_apexes;
   for (const auto& dir : kBootstrapApexDirs) {
-    auto scan_status = ScanApexFiles(dir.c_str());
-    if (!scan_status.ok()) {
+    auto scan = ScanApexFiles(dir.c_str());
+    if (!scan.ok()) {
       LOG(ERROR) << "Failed to scan APEX files in " << dir << " : "
-                 << scan_status.error();
+                 << scan.error();
       return 1;
     }
-    if (auto ret = ActivateApexPackages(*scan_status); !ret.ok()) {
-      LOG(ERROR) << "Failed to activate APEX files in " << dir << " : "
-                 << ret.error();
-      return 1;
-    }
+    std::copy_if(std::make_move_iterator(scan->begin()),
+                 std::make_move_iterator(scan->end()),
+                 std::back_inserter(bootstrap_apexes), isBootstrapApex);
   }
 
-  onAllPackagesActivated();
+  // Now activate bootstrap apexes.
+  if (auto ret = ActivateApexPackages(bootstrap_apexes); !ret.ok()) {
+    LOG(ERROR) << "Failed to activate bootstrap apex files : " << ret.error();
+    return 1;
+  }
+
+  onAllPackagesActivated(/*is_bootstrap=*/true);
   LOG(INFO) << "Bootstrapping done";
   return 0;
 }
@@ -2124,15 +2088,15 @@ void onStart() {
   snapshotOrRestoreDeSysData();
 }
 
-void onAllPackagesActivated() {
-  auto result = emitApexInfoList();
+void onAllPackagesActivated(bool is_bootstrap) {
+  auto result = emitApexInfoList(is_bootstrap);
   if (!result.ok()) {
     LOG(ERROR) << "cannot emit apex info list: " << result.error();
   }
 
   // Because apexd in bootstrap mode runs in blocking mode
   // we don't have to set as activated.
-  if (gBootstrap) {
+  if (is_bootstrap) {
     return;
   }
 

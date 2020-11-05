@@ -52,10 +52,16 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
     @Rule
     public AbandonSessionsRule mHostTestRule = new AbandonSessionsRule(this);
 
+    private boolean mWasAdbRoot = false;
+
     @Before
     public void setUp() throws Exception {
         mHostUtils.uninstallShimApexIfNecessary();
         resetProperties();
+        mWasAdbRoot = getDevice().isAdbRoot();
+        if (!mWasAdbRoot) {
+            assumeTrue("Requires root", getDevice().enableAdbRoot());
+        }
     }
 
     /**
@@ -66,6 +72,9 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
     public void tearDown() throws Exception {
         mHostUtils.uninstallShimApexIfNecessary();
         resetProperties();
+        if (!mWasAdbRoot) {
+            getDevice().disableAdbRoot();
+        }
     }
 
     private void resetProperties() throws Exception {

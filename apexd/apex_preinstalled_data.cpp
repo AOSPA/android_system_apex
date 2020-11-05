@@ -59,14 +59,11 @@ Result<void> ApexPreinstalledData::ScanDir(const std::string& dir) {
 
     auto it = data_.find(name);
     if (it == data_.end()) {
-      LOG(INFO) << "Added " << apex_data.path << " ( " << name
-                << " ) to list of pre-installed apexes";
       data_[name] = apex_data;
     } else if (it->second.public_key != apex_data.public_key) {
-      return Error() << "Key for package " << name
-                     << " does not match with previously scanned key";
-    } else {
-      LOG(INFO) << apex_data.path << " ( " << name << " ) is already added";
+      return Error() << "Key for package " << apex_data.path << " ( " << name
+                     << ") does not match with previously scanned key from "
+                     << it->second.path;
     }
   }
   return {};

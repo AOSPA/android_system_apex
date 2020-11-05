@@ -114,12 +114,6 @@ apex_test {
   ignore_system_library_special_case: true,
   key: "com.android.support.apexer.key",
   binaries: apexer_tools + apexer_go_tools,
-  enabled: false,
-  target: {
-    linux_glibc_x86_64: {
-      enabled: true,
-    },
-  },
 }
 
 // TODO(b/148659029): this test can't run in TEST_MAPPING.

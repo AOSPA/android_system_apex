@@ -128,16 +128,6 @@ prebuilt_etc {
     installable: false,
 }
 
-cc_binary {
-    name: "sample_prefer32_binary",
-    srcs: ["sample_prefer32_binary.cc"],
-    target: {
-        android: {
-            compile_multilib: "prefer32",
-        },
-    },
-}
-
 java_test_host {
     name: "apex_rollback_tests",
     srcs:  ["src/**/ApexRollbackTests.java", "src/**/ApexTestUtils.java"],

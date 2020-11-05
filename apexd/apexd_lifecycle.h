@@ -27,6 +27,11 @@ class ApexdLifecycle {
   ApexdLifecycle(){};
   std::atomic<bool> boot_completed_;
 
+  // Non-copyable && non-moveable.
+  ApexdLifecycle(const ApexdLifecycle&) = delete;
+  ApexdLifecycle& operator=(const ApexdLifecycle&) = delete;
+  ApexdLifecycle& operator=(ApexdLifecycle&&) = delete;
+
  public:
   static ApexdLifecycle& getInstance() {
     static ApexdLifecycle instance;
