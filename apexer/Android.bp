@@ -146,10 +146,6 @@ python_test_host {
     libs: [
         "apex_manifest",
     ],
-    // TODO(b/160848329): To remove the unnecessary dependence
-    target_required: [
-        "apexer_test_host_tools",
-    ],
 }
 
 apexer_deps_minus_go_tools = apexer_tools + [
@@ -199,9 +195,8 @@ genrule {
         "$(location soong_zip) -C $$BASE -D $$BASE -o $(out) && " +
         "rm -rf $$BASE",
     // TODO(b/157110982): cannot specify "required" dependency on go binary
-    host_required: apexer_deps_minus_go_tools + [
+    host_required: [
         // TODO(b/160848329): To remove the unnecessary dependence
         "libconscrypt_openjdk_jni",
-        "signapk",
     ],
 }

@@ -170,3 +170,25 @@ java_test_host {
         ":com.android.apex.cts.shim.v2_no_pb",
     ],
 }
+
+java_test_host {
+    name: "sharedlibs_host_tests",
+    srcs: [
+        "src/**/SharedLibsApexTest.java"
+    ],
+    libs: ["tradefed"],
+    java_resources: [
+        ":com.android.apex.test.bar",
+        ":com.android.apex.test.bar_stripped",
+        ":com.android.apex.test.foo",
+        ":com.android.apex.test.foo_stripped",
+        ":com.android.apex.test.sharedlibs_generated",
+    ],
+    static_libs: [
+        "cts-install-lib-host",
+        "frameworks-base-hostutils",
+        "truth-prebuilt"
+    ],
+    test_config: "shared-libs-apex-tests.xml",
+    test_suites: ["general-tests"],
+}
