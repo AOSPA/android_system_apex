@@ -44,12 +44,75 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
     @Rule
     public final RuleChain ruleChain = RuleChain.outerRule(mTemporaryFolder).around(mPreparer);
 
-    private static final String TEST_BAR_APEX = "com.android.apex.test.bar.apex";
-    private static final String TEST_BAR_APEX_STRIPPED = "com.android.apex.test.bar_stripped.apex";
-    private static final String TEST_FOO_APEX = "com.android.apex.test.foo.apex";
-    private static final String TEST_FOO_APEX_STRIPPED = "com.android.apex.test.foo_stripped.apex";
-    private static final String TEST_SHAREDLIBS_APEX =
-            "com.android.apex.test.sharedlibs_generated.apex";
+    enum ApexName {
+        FOO,
+        BAR,
+        SHAREDLIBS
+    }
+
+    enum ApexVersion {
+        ONE,
+        TWO
+    }
+
+    enum ApexType {
+        DEFAULT,
+        STRIPPED
+    }
+
+    enum SharedLibsVersion {
+        X,
+        Y
+    }
+
+    /**
+     * Utility function to generate test apex names in the form e.g.:
+     *   "com.android.apex.test.bar.v1.libvX.apex"
+     */
+    private String getTestApex(ApexName apexName, ApexType apexType, ApexVersion apexVersion,
+            SharedLibsVersion sharedLibsVersion) {
+        StringBuilder ret = new StringBuilder();
+        ret.append("com.android.apex.test.");
+        switch(apexName) {
+            case FOO:
+                ret.append("foo");
+                break;
+            case BAR:
+                ret.append("bar");
+                break;
+            case SHAREDLIBS:
+                ret.append("sharedlibs_generated");
+                break;
+        }
+
+        switch(apexType) {
+            case STRIPPED:
+                ret.append("_stripped");
+                break;
+            case DEFAULT:
+                break;
+        }
+
+        switch(apexVersion) {
+            case ONE:
+                ret.append(".v1");
+                break;
+            case TWO:
+                ret.append(".v2");
+                break;
+        }
+
+        switch(sharedLibsVersion) {
+            case X:
+                ret.append(".libvX.apex");
+                break;
+            case Y:
+                ret.append(".libvY.apex");
+                break;
+        }
+
+        return ret.toString();
+    }
 
     /**
      * Tests basic functionality of two apex packages being force-installed and the C++ binaries
@@ -60,7 +123,10 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
-        for (String apex : new String[]{TEST_BAR_APEX, TEST_FOO_APEX}) {
+        for (String apex : new String[]{
+                getTestApex(ApexName.BAR, ApexType.DEFAULT, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.FOO, ApexType.DEFAULT, ApexVersion.ONE, SharedLibsVersion.X),
+        }) {
             mPreparer.pushResourceFile(apex,
                     "/system/apex/" + apex);
         }
@@ -68,10 +134,27 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
 
         String runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.foo/bin/foo_test");
-        assertThat(runAsResult).contains("HELLO_FOO");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_1 SHARED_LIB_VERSION_X");
         runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.bar/bin/bar_test");
-        assertThat(runAsResult).contains("HELLO_BAR");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+
+        mPreparer.stageMultiplePackages(
+            new String[]{
+                getTestApex(ApexName.BAR, ApexType.DEFAULT, ApexVersion.TWO, SharedLibsVersion.Y),
+                getTestApex(ApexName.FOO, ApexType.DEFAULT, ApexVersion.TWO, SharedLibsVersion.Y),
+            },
+            new String[] {
+                "com.android.apex.test.bar",
+                "com.android.apex.test.foo",
+            }).reboot();
+
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.foo/bin/foo_test");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_2 SHARED_LIB_VERSION_Y");
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.bar/bin/bar_test");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_2 SHARED_LIB_VERSION_Y");
     }
 
     /**
@@ -84,9 +167,11 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
         for (String apex : new String[]{
-                TEST_BAR_APEX_STRIPPED,
-                TEST_FOO_APEX_STRIPPED,
-                TEST_SHAREDLIBS_APEX}) {
+                getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.ONE,
+                    SharedLibsVersion.X),
+        }) {
             mPreparer.pushResourceFile(apex,
                     "/system/apex/" + apex);
         }
@@ -94,9 +179,29 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
 
         String runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.foo/bin/foo_test");
-        assertThat(runAsResult).contains("HELLO_FOO");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_1 SHARED_LIB_VERSION_X");
         runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.bar/bin/bar_test");
-        assertThat(runAsResult).contains("HELLO_BAR");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+
+        mPreparer.stageMultiplePackages(
+            new String[]{
+                getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.TWO, SharedLibsVersion.Y),
+                getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.TWO, SharedLibsVersion.Y),
+                getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.TWO,
+                    SharedLibsVersion.Y),
+            },
+            new String[] {
+                "com.android.apex.test.bar",
+                "com.android.apex.test.foo",
+                "com.android.apex.test.sharedlibs",
+            }).reboot();
+
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.foo/bin/foo_test");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_2 SHARED_LIB_VERSION_Y");
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.bar/bin/bar_test");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_2 SHARED_LIB_VERSION_Y");
     }
 }

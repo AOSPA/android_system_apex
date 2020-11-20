@@ -34,12 +34,18 @@ apex {
 cc_binary {
     name: "bar_test",
     srcs: ["bar_test.cc"],
+    shared_libs: [
+      "libsharedlibtest",
+    ],
     apex_available: [ "com.android.apex.test.bar" ],
 }
 
 genrule {
     name: "com.android.apex.test.bar_stripped",
     out: ["com.android.apex.test.bar_stripped.apex"],
+    dist: {
+        targets: ["sharedlibs_test_genfile"],
+    },
     srcs: [
         ":com.android.apex.test.bar",
         "com.android.apex.test.bar.avbpubkey",

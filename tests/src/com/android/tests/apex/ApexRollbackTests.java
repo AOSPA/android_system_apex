@@ -171,12 +171,8 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
 
         ApexInfo ctsShimV1 = new ApexInfo("com.android.apex.cts.shim", 1L);
         ApexInfo ctsShimV2 = new ApexInfo("com.android.apex.cts.shim", 2L);
-        String stagedSessionsInfo = device.executeShellCommand("pm get-stagedsessions");
-        for (String line: stagedSessionsInfo.split("[\\r\\n]+")) {
-            if (line.contains(sessionIdToCheck)) {
-                assertThat(line).contains("isApplied = true");
-            }
-        }
+        String stagedSessionInfo = getStagedSession(sessionIdToCheck);
+        assertThat(stagedSessionInfo).contains("isApplied = true");
 
         Set<ApexInfo> activatedApexes = device.getActiveApexes();
         assertThat(activatedApexes).contains(ctsShimV2);
@@ -213,12 +209,8 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
 
         ApexInfo ctsShimV1 = new ApexInfo("com.android.apex.cts.shim", 1L);
         ApexInfo ctsShimV2 = new ApexInfo("com.android.apex.cts.shim", 2L);
-        String stagedSessionsInfo = device.executeShellCommand("pm get-stagedsessions");
-        for (String line: stagedSessionsInfo.split("[\\r\\n]+")) {
-            if (line.contains(sessionIdToCheck)) {
-                assertThat(line).contains("isFailed = true");
-            }
-        }
+        String stagedSessionInfo = getStagedSession(sessionIdToCheck);
+        assertThat(stagedSessionInfo).contains("isFailed = true");
 
         Set<ApexInfo> activatedApexes = device.getActiveApexes();
         assertThat(activatedApexes).contains(ctsShimV1);
@@ -255,12 +247,8 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
 
         ApexInfo ctsShimV1 = new ApexInfo("com.android.apex.cts.shim", 1L);
         ApexInfo ctsShimV2 = new ApexInfo("com.android.apex.cts.shim", 2L);
-        String stagedSessionsInfo = device.executeShellCommand("pm get-stagedsessions");
-        for (String line: stagedSessionsInfo.split("[\\r\\n]+")) {
-            if (line.contains(sessionIdToCheck)) {
-                assertThat(line).contains("isApplied = true");
-            }
-        }
+        String stagedSessionInfo = getStagedSession(sessionIdToCheck);
+        assertThat(stagedSessionInfo).contains("isApplied = true");
 
         Set<ApexInfo> activatedApexes = device.getActiveApexes();
         assertThat(activatedApexes).contains(ctsShimV2);
@@ -468,13 +456,13 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
 
     String getStagedSession(String sessionId) throws DeviceNotAvailableException {
         final String[] lines = getDevice().executeShellCommand(
-                "pm get-stagedsessions --only-parent").split("\n");
+                "pm get-stagedsessions").split("\n");
         for (int i = 0; i < lines.length; i++) {
-            if (lines[i].contains("sessionId = " + sessionId)) {
+            if (lines[i].startsWith("sessionId = " + sessionId + ";")) {
                 // Join all lines realted to this session
                 final StringBuilder result = new StringBuilder(lines[i]);
                 for (int j = i + 1; j < lines.length; j++) {
-                    if (lines[j].contains("sessionId = ")) {
+                    if (lines[j].startsWith("sessionId = ")) {
                         // A new session block has started
                         break;
                     }

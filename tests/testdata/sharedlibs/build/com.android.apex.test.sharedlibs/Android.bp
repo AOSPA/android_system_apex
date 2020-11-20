@@ -35,12 +35,18 @@ apex {
 cc_binary {
     name: "noop",
     srcs: ["noop.cc"],
+    shared_libs: [
+      "libsharedlibtest",
+    ],
     apex_available: [ "com.android.apex.test.sharedlibs_stub" ],
 }
 
 genrule {
     name: "com.android.apex.test.sharedlibs_generated",
     out: ["com.android.apex.test.sharedlibs_generated.apex"],
+    dist: {
+        targets: ["sharedlibs_test_genfile"],
+    },
     srcs: [
         ":com.android.apex.test.sharedlibs_stub",
         "com.android.apex.test.sharedlibs.avbpubkey",

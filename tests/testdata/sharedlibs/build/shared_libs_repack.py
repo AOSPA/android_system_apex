@@ -245,13 +245,14 @@ def main(argv):
   container_files = get_container_files(apex_file_path, args.tmpdir)
   payload_dir = extract_payload_from_img(container_files['apex_payload.img'],
                                          args.tmpdir)
-  print(payload_dir)
+  libs = ['libc++.so', 'libsharedlibtest.so']
+
   libpath = 'lib64'
-  libcpp = os.path.join(payload_dir, libpath, 'libc++.so')
-  if not os.path.exists(libcpp):
+  if not os.path.exists(os.path.join(payload_dir, libpath, libs[0])):
     libpath = 'lib'
-    libcpp = os.path.join(payload_dir, libpath, 'libc++.so')
-  libcpp_hash = compute_sha512(libcpp)
+  lib_paths = [os.path.join(payload_dir, libpath, lib) for lib in libs]
+  lib_paths_hashes = [(lib, compute_sha512(lib)) for lib in lib_paths]
+
   if args.mode == 'strip':
     # Stripping mode. Add a reference to the version of libc++.so to the
     # sharedApexLibs entry in the manifest, and remove lib64/libc++.so from
@@ -259,7 +260,16 @@ def main(argv):
     pb = apex_manifest_pb2.ApexManifest()
     with open(container_files['apex_manifest.pb'], 'rb') as f:
       pb.ParseFromString(f.read())
-      pb.sharedApexLibs.append('libc++.so:' + libcpp_hash)
+      for lib_path_hash in lib_paths_hashes:
+        basename = os.path.basename(lib_path_hash[0])
+        pb.sharedApexLibs.append(basename + ':' + lib_path_hash[1])
+        # Replace existing library with symlink
+        symlink_dst = os.path.join('/', 'apex',
+                                   'com.android.apex.test.sharedlibs',
+                                   libpath, basename, lib_path_hash[1],
+                                   basename)
+        os.remove(lib_path_hash[0])
+        os.system('ln -s {0} {1}'.format(symlink_dst, lib_path_hash[0]))
       #
       # Example of resulting manifest -- use  print(MessageToString(pb)) :
       # name: "com.android.apex.test.foo"
@@ -270,42 +280,40 @@ def main(argv):
       # sharedApexLibs : "libc++.so:83d8f50..."
     with open(container_files['apex_manifest.pb'], 'wb') as f:
       f.write(pb.SerializeToString())
-    # Replace existing library with symlink
-    symlink_dst = os.path.join('/', 'apex',
-                               'com.android.apex.test.sharedlibs',
-                               libpath, 'libc++.so', libcpp_hash,
-                               'libc++.so')
-    os.remove(libcpp)
-    os.system('ln -s {0} {1}'.format(symlink_dst, libcpp))
 
   if args.mode == 'sharedlibs':
-    # We assume that libcpp exists in lib64/ or lib/. We'll move it to a
-    # directory named lib/libc++.so/${SHA512_OF_LIBCPP}/
-    #
-    tmp_libcpp = os.path.join(payload_dir, libpath, 'libc++_backup.so')
-    shutil.move(libcpp, tmp_libcpp)
-    destdir = os.path.join(payload_dir, libpath, 'libc++.so', libcpp_hash)
-    os.makedirs(destdir)
-    shutil.move(tmp_libcpp, os.path.join(destdir, 'libc++.so'))
-
     pb = apex_build_info_pb2.ApexBuildInfo()
     with open(container_files['apex_build_info.pb'], 'rb') as f:
       pb.ParseFromString(f.read())
 
     canned_fs_config = pb.canned_fs_config.decode('utf-8')
-    canned_fs_config += os.path.join('/', libpath, 'libc++.so',
-                                     libcpp_hash, 'libc++.so') + \
-                                     ' 1000 1000 0644\n'
-    canned_fs_config += '/' + libpath + ' 0 2000 0755\n'
-    canned_fs_config += '/' + libpath + '/libc++.so 0 2000 0755\n'
-    canned_fs_config += '/' + libpath + '/libc++.so/' + libcpp_hash + \
-                        ' 0 2000 0755\n'
+
+    # We assume that libcpp exists in lib64/ or lib/. We'll move it to a
+    # directory named lib/libc++.so/${SHA512_OF_LIBCPP}/
+    #
+    for lib_path_hash in lib_paths_hashes:
+      basename = os.path.basename(lib_path_hash[0])
+      tmp_lib = os.path.join(payload_dir, libpath, basename + '.bak')
+      shutil.move(lib_path_hash[0], tmp_lib)
+      destdir = os.path.join(payload_dir, libpath, basename, lib_path_hash[1])
+      os.makedirs(destdir)
+      shutil.move(tmp_lib, os.path.join(destdir, basename))
+
+      canned_fs_config += os.path.join('/', libpath, basename,
+                                       lib_path_hash[1], basename) + \
+                                       ' 1000 1000 0644\n'
+      canned_fs_config += '/' + libpath + ' 0 2000 0755\n'
+      canned_fs_config += '/' + libpath + '/' + basename + ' 0 2000 0755\n'
+      canned_fs_config += '/' + libpath + '/' + basename + '/' + \
+                          lib_path_hash[1] + ' 0 2000 0755\n'
+
     pb.canned_fs_config = canned_fs_config.encode('utf-8')
     with open(container_files['apex_build_info.pb'], 'wb') as f:
       f.write(pb.SerializeToString())
 
   try:
-    os.rmdir(os.path.dirname(libcpp))
+    for lib in lib_paths:
+      os.rmdir(os.path.dirname(lib))
   except OSError:
     # Directory not empty, that's OK.
     pass

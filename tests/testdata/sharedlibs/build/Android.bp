@@ -35,3 +35,21 @@ python_binary_host {
         "signapk",
     ],
 }
+
+cc_library_shared {
+    name: "libsharedlibtest",
+    srcs: [ "sharedlibstest.cpp", ],
+
+    local_include_dirs: [
+        "include",
+    ],
+
+    export_include_dirs: [
+        "include",
+    ],
+    apex_available: [
+        "com.android.apex.test.bar",
+        "com.android.apex.test.foo",
+        "com.android.apex.test.sharedlibs_stub",
+    ],
+}
