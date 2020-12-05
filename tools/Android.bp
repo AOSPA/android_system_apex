@@ -34,3 +34,42 @@ python_binary_host {
     ],
 }
 
+python_binary_host {
+    name: "apex_compression_tool",
+    srcs: [
+        "apex_compression_tool.py",
+    ],
+    version: {
+        py2: {
+            enabled: false,
+        },
+        py3: {
+            enabled: true,
+            embedded_launcher: true,
+        },
+    },
+}
+
+python_test_host {
+    name: "apex_compression_tool_test",
+    main: "apex_compression_tool_test.py",
+    srcs: [
+        "apex_compression_tool_test.py",
+    ],
+    data: [
+        ":com.android.example.apex",
+    ],
+    version: {
+        py2: {
+            enabled: false,
+        },
+        py3: {
+            enabled: true,
+        },
+    },
+    test_suites: ["general-tests"],
+    required: [
+        "apex_compression_tool",
+    ],
+}
+

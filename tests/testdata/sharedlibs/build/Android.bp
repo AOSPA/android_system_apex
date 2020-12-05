@@ -49,6 +49,7 @@ cc_library_shared {
     ],
     apex_available: [
         "com.android.apex.test.bar",
+        "com.android.apex.test.baz",
         "com.android.apex.test.foo",
         "com.android.apex.test.sharedlibs_stub",
     ],

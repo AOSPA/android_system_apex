@@ -12,49 +12,49 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 apex_key {
-    name: "com.android.apex.test.bar.key",
-    public_key: "com.android.apex.test.bar.avbpubkey",
-    private_key: "com.android.apex.test.bar.pem",
+    name: "com.android.apex.test.baz.key",
+    public_key: "com.android.apex.test.baz.avbpubkey",
+    private_key: "com.android.apex.test.baz.pem",
 }
 
 android_app_certificate {
-    name: "com.android.apex.test.bar.certificate",
-    certificate: "com.android.apex.test.bar",
+    name: "com.android.apex.test.baz.certificate",
+    certificate: "com.android.apex.test.baz",
 }
 
 apex {
-    name: "com.android.apex.test.bar",
+    name: "com.android.apex.test.baz",
     manifest: "manifest.json",
     file_contexts: ":apex.test-file_contexts",
-    key: "com.android.apex.test.bar.key",
+    key: "com.android.apex.test.baz.key",
     installable: false,
-    binaries: [ "bar_test" ],
+    binaries: [ "baz_test" ],
     dist: {
         targets: ["sharedlibs_test"],
     },
 }
 
 cc_binary {
-    name: "bar_test",
-    srcs: ["bar_test.cc"],
+    name: "baz_test",
+    srcs: ["baz_test.cc"],
     shared_libs: [
       "libsharedlibtest",
     ],
-    apex_available: [ "com.android.apex.test.bar" ],
+    apex_available: [ "com.android.apex.test.baz" ],
 }
 
 genrule {
-    name: "com.android.apex.test.bar_stripped",
-    out: ["com.android.apex.test.bar_stripped.apex"],
+    name: "com.android.apex.test.baz_stripped",
+    out: ["com.android.apex.test.baz_stripped.apex"],
     dist: {
         targets: ["sharedlibs_test"],
     },
     srcs: [
-        ":com.android.apex.test.bar",
-        "com.android.apex.test.bar.avbpubkey",
-        "com.android.apex.test.bar.pem",
-        "com.android.apex.test.bar.pk8",
-        "com.android.apex.test.bar.x509.pem",
+        ":com.android.apex.test.baz",
+        "com.android.apex.test.baz.avbpubkey",
+        "com.android.apex.test.baz.pem",
+        "com.android.apex.test.baz.pk8",
+        "com.android.apex.test.baz.x509.pem",
     ],
     tools: [
         "apexer",
@@ -64,11 +64,11 @@ genrule {
     ],
     cmd: "$(location shared_libs_repack) " +
          " --mode strip" +
-         " --key $(location com.android.apex.test.bar.pem)" +
-         " --input $(location :com.android.apex.test.bar)" +
-         " --output $(genDir)/com.android.apex.test.bar_stripped.apex" +
-         " --pk8key $(location com.android.apex.test.bar.pk8)" +
-         " --pubkey $(location com.android.apex.test.bar.avbpubkey)" +
-         " --x509key $(location com.android.apex.test.bar.x509.pem)" +
+         " --key $(location com.android.apex.test.baz.pem)" +
+         " --input $(location :com.android.apex.test.baz)" +
+         " --output $(genDir)/com.android.apex.test.baz_stripped.apex" +
+         " --pk8key $(location com.android.apex.test.baz.pk8)" +
+         " --pubkey $(location com.android.apex.test.baz.avbpubkey)" +
+         " --x509key $(location com.android.apex.test.baz.x509.pem)" +
          " --tmpdir $(genDir)",
 }

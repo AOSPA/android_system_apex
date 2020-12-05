@@ -47,6 +47,7 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
     enum ApexName {
         FOO,
         BAR,
+        BAZ,
         SHAREDLIBS
     }
 
@@ -79,6 +80,9 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
                 break;
             case BAR:
                 ret.append("bar");
+                break;
+            case BAZ:
+                ret.append("baz");
                 break;
             case SHAREDLIBS:
                 ret.append("sharedlibs_generated");
@@ -132,6 +136,7 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         }
         mPreparer.reboot();
 
+        getDevice().disableAdbRoot();
         String runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.foo/bin/foo_test");
         assertThat(runAsResult).isEqualTo("FOO_VERSION_1 SHARED_LIB_VERSION_X");
@@ -166,6 +171,11 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
+        // Pre-installed on /system:
+        //   package bar version 1 using library version X
+        //   package foo version 1 using library version X
+        //   package sharedlibs version 1 exporting library version X
+
         for (String apex : new String[]{
                 getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
                 getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
@@ -177,12 +187,18 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         }
         mPreparer.reboot();
 
+        getDevice().disableAdbRoot();
         String runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.foo/bin/foo_test");
         assertThat(runAsResult).isEqualTo("FOO_VERSION_1 SHARED_LIB_VERSION_X");
         runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.bar/bin/bar_test");
         assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+
+        // Updated packages (installed on /data/apex/active):
+        //   package bar version 2 using library version Y
+        //   package foo version 2 using library version Y
+        //   package sharedlibs version 2 exporting library version Y
 
         mPreparer.stageMultiplePackages(
             new String[]{
@@ -203,5 +219,34 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         runAsResult = getDevice().executeShellCommand(
             "/apex/com.android.apex.test.bar/bin/bar_test");
         assertThat(runAsResult).isEqualTo("BAR_VERSION_2 SHARED_LIB_VERSION_Y");
+
+        // Assume that an OTA now adds a package baz on /system needing libraries installed on
+        // /system:
+        //
+        // Pre-installed:
+        //   (inactive) package bar version 1 using library version X
+        //   package baz version 1 using library version X
+        //   (inactive) package foo version 1 using library version X
+        //   package sharedlibs version 1 exporting library version X
+        //
+        // Updated packages (installed on /data/apex/active):
+        //   package bar version 2 using library version Y
+        //   package foo version 2 using library version Y
+        //   package sharedlibs version 2 exporting library version Y
+
+        String baz_apex =
+                getTestApex(ApexName.BAZ, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X);
+        mPreparer.pushResourceFile(baz_apex, "/system/apex/" + baz_apex);
+        mPreparer.reboot();
+
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.foo/bin/foo_test");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_2 SHARED_LIB_VERSION_Y");
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.bar/bin/bar_test");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_2 SHARED_LIB_VERSION_Y");
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.baz/bin/baz_test");
+        assertThat(runAsResult).isEqualTo("BAZ_VERSION_1 SHARED_LIB_VERSION_X");
     }
 }

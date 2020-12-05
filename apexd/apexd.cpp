@@ -1022,6 +1022,59 @@ Result<void> resumeRevertIfNeeded() {
   return revertActiveSessions("");
 }
 
+Result<void> activateSharedLibsPackage(const std::string& mountPoint) {
+  for (const auto& libPath : {"lib", "lib64"}) {
+    std::string apexLibPath = mountPoint + "/" + libPath;
+    if (!std::filesystem::exists(apexLibPath)) {
+      continue;
+    }
+
+    for (const auto& lib_entry :
+         std::filesystem::directory_iterator(apexLibPath)) {
+      if (!lib_entry.is_directory()) {
+        continue;
+      }
+
+      const auto library_name = lib_entry.path().filename();
+      const std::string library_symlink_dir =
+          StringPrintf("%s/%s/%s/%s", kApexRoot, kApexSharedLibsSubDir, libPath,
+                       library_name.c_str());
+
+      if (!std::filesystem::exists(library_symlink_dir)) {
+        std::error_code error_code;
+        std::filesystem::create_directory(library_symlink_dir, error_code);
+        if (error_code) {
+          return Error() << "Failed to create directory " << library_symlink_dir
+                         << ": " << error_code.message();
+        }
+      }
+
+      for (const auto& lib_items :
+           std::filesystem::directory_iterator(lib_entry.path().string())) {
+        const auto hash_value = lib_items.path().filename();
+        const std::string library_symlink_hash = StringPrintf(
+            "%s/%s", library_symlink_dir.c_str(), hash_value.c_str());
+
+        if (std::filesystem::exists(library_symlink_hash)) {
+          // TODO(b/161542925) : Handle symlink from different sharedlibs APEX
+          // with same hash value
+          continue;
+        }
+        std::error_code error_code;
+        std::filesystem::create_directory_symlink(
+            lib_items.path(), library_symlink_hash, error_code);
+        if (error_code) {
+          return Error() << "Failed to create symlink from " << lib_items.path()
+                         << " to " << library_symlink_hash
+                         << error_code.message();
+        }
+      }
+    }
+  }
+
+  return {};
+}
+
 Result<void> activatePackageImpl(const ApexFile& apex_file) {
   const ApexManifest& manifest = apex_file.GetManifest();
 
@@ -1029,7 +1082,6 @@ Result<void> activatePackageImpl(const ApexFile& apex_file) {
   // version. Also detect whether this is the highest version.
   // We roll this into a single check.
   bool is_newest_version = true;
-  bool found_other_version = false;
   bool version_found_mounted = false;
   {
     uint64_t new_version = manifest.version();
@@ -1040,7 +1092,6 @@ Result<void> activatePackageImpl(const ApexFile& apex_file) {
           if (!otherApex.ok()) {
             return;
           }
-          found_other_version = true;
           if (static_cast<uint64_t>(otherApex->GetManifest().version()) ==
               new_version) {
             version_found_mounted = true;
@@ -1051,7 +1102,12 @@ Result<void> activatePackageImpl(const ApexFile& apex_file) {
             is_newest_version = false;
           }
         });
-    if (version_found_active) {
+    // If the package provides shared libraries to other APEXs, we need to
+    // activate all versions available (i.e. preloaded on /system/apex and
+    // available on /data/apex/active). The reason is that there might be some
+    // APEXs loaded from /system/apex that reference the libraries contained on
+    // the preloaded version of the apex providing shared libraries.
+    if (version_found_active && !manifest.providesharedapexlibs()) {
       LOG(DEBUG) << "Package " << manifest.name() << " with version "
                  << manifest.version() << " already active";
       return {};
@@ -1067,19 +1123,38 @@ Result<void> activatePackageImpl(const ApexFile& apex_file) {
     }
   }
 
-  bool mounted_latest = false;
-  if (is_newest_version) {
-    const Result<void>& update_st = apexd_private::BindMount(
-        apexd_private::GetActiveMountPoint(manifest), mountPoint);
-    mounted_latest = update_st.has_value();
-    if (!update_st.ok()) {
-      return Error() << "Failed to update package " << manifest.name()
-                     << " to version " << manifest.version() << " : "
-                     << update_st.error();
+  // For packages providing shared libraries, avoid creating a bindmount since
+  // there is no use for the /apex/<package_name> directory. However, mark the
+  // highest version as latest so that the latest version of the package can be
+  // properly reported to PackageManager.
+  if (manifest.providesharedapexlibs()) {
+    if (is_newest_version) {
+      gMountedApexes.SetLatest(manifest.name(), apex_file.GetPath());
+    }
+  } else {
+    bool mounted_latest = false;
+    // Bind mount the latest version to /apex/<package_name>, unless the
+    // package provides shared libraries to other APEXs.
+    if (is_newest_version) {
+      const Result<void>& update_st = apexd_private::BindMount(
+          apexd_private::GetActiveMountPoint(manifest), mountPoint);
+      mounted_latest = update_st.has_value();
+      if (!update_st.ok()) {
+        return Error() << "Failed to update package " << manifest.name()
+                       << " to version " << manifest.version() << " : "
+                       << update_st.error();
+      }
+    }
+    if (mounted_latest) {
+      gMountedApexes.SetLatest(manifest.name(), apex_file.GetPath());
     }
   }
-  if (mounted_latest) {
-    gMountedApexes.SetLatest(manifest.name(), apex_file.GetPath());
+
+  if (manifest.providesharedapexlibs()) {
+    const auto& handleSharedLibsApex = activateSharedLibsPackage(mountPoint);
+    if (!handleSharedLibsApex.ok()) {
+      return handleSharedLibsApex;
+    }
   }
 
   LOG(DEBUG) << "Successfully activated " << apex_file.GetPath()
@@ -1297,19 +1372,46 @@ Result<std::vector<ApexFile>> ScanApexFiles(const char* apex_package_dir) {
 }
 
 Result<void> ActivateApexPackages(const std::vector<ApexFile>& apexes) {
+  // Creates /apex/sharedlibs/lib{,64}.
+  std::string sharedLibsSubDir =
+      StringPrintf("%s/%s", kApexRoot, kApexSharedLibsSubDir);
+  if (!std::filesystem::exists(sharedLibsSubDir)) {
+    std::error_code error_code;
+    std::filesystem::create_directory(sharedLibsSubDir, error_code);
+    if (error_code) {
+      return Error() << "Failed to create directory " << sharedLibsSubDir
+                     << ": " << error_code.message();
+    }
+  }
+  for (const auto& libPath : {"lib", "lib64"}) {
+    std::string apexLibPath =
+        StringPrintf("%s/%s", sharedLibsSubDir.c_str(), libPath);
+    if (!std::filesystem::exists(apexLibPath)) {
+      std::error_code error_code;
+      std::filesystem::create_directory(apexLibPath, error_code);
+      if (error_code) {
+        return Error() << "Failed to create directory " << apexLibPath << ": "
+                       << error_code.message();
+      }
+    }
+  }
+
   const auto& packages_with_code = GetActivePackagesMap();
   size_t failed_cnt = 0;
   size_t skipped_cnt = 0;
   size_t activated_cnt = 0;
   for (const auto& apex : apexes) {
-    uint64_t new_version = static_cast<uint64_t>(apex.GetManifest().version());
-    const auto& it = packages_with_code.find(apex.GetManifest().name());
-    if (it != packages_with_code.end() && it->second >= new_version) {
-      LOG(INFO) << "Skipping activation of " << apex.GetPath()
-                << " same package with higher version " << it->second
-                << " is already active";
-      skipped_cnt++;
-      continue;
+    if (!apex.GetManifest().providesharedapexlibs()) {
+      uint64_t new_version =
+          static_cast<uint64_t>(apex.GetManifest().version());
+      const auto& it = packages_with_code.find(apex.GetManifest().name());
+      if (it != packages_with_code.end() && it->second >= new_version) {
+        LOG(INFO) << "Skipping activation of " << apex.GetPath()
+                  << " same package with higher version " << it->second
+                  << " is already active";
+        skipped_cnt++;
+        continue;
+      }
     }
 
     if (auto res = activatePackageImpl(apex); !res.ok()) {
@@ -2239,6 +2341,13 @@ void UnmountDanglingMounts() {
   gMountedApexes.ForallMountedApexes([&](const std::string& package,
                                          const MountedApexData& data,
                                          bool latest) {
+    Result<ApexFile> apex = ApexFile::Open(data.full_path);
+    if (!apex.ok()) {
+      return;
+    }
+    if (apex->GetManifest().providesharedapexlibs()) {
+      return;
+    }
     if (!latest) {
       danglings.insert({package, data});
     }

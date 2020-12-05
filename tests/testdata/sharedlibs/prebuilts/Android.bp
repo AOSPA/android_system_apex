@@ -33,6 +33,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.bar_stripped.v1.libvX.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -52,6 +53,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.bar_stripped.v2.libvY.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -71,6 +73,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.bar.v1.libvX.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -90,6 +93,27 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.bar.v2.libvY.apex",
+  installable: false,
+}
+
+prebuilt_apex {
+  name: "com.android.apex.test.baz_stripped.v1.libvX_prebuilt",
+  arch: {
+    arm: {
+      src: "arm/com.android.apex.test.baz_stripped.v1.libvX.apex",
+    },
+    arm64: {
+      src: "arm64/com.android.apex.test.baz_stripped.v1.libvX.apex",
+    },
+    x86: {
+      src: "x86/com.android.apex.test.baz_stripped.v1.libvX.apex",
+    },
+    x86_64: {
+      src: "x86_64/com.android.apex.test.baz_stripped.v1.libvX.apex",
+    },
+  },
+  filename: "com.android.apex.test.baz_stripped.v1.libvX.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -109,6 +133,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.foo_stripped.v1.libvX.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -128,6 +153,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.foo_stripped.v2.libvY.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -147,6 +173,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.foo.v1.libvX.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -166,6 +193,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.foo.v2.libvY.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -185,6 +213,7 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.sharedlibs_generated.v1.libvX.apex",
+  installable: false,
 }
 
 prebuilt_apex {
@@ -204,4 +233,5 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.sharedlibs_generated.v2.libvY.apex",
+  installable: false,
 }

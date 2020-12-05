@@ -39,6 +39,8 @@ static constexpr const char* kApexRoot = "/apex";
 static constexpr const char* kStagedSessionsDir = "/data/app-staging";
 
 static constexpr const char* kApexDataSubDir = "apexdata";
+// TODO(b/161542925) reject any apex with name equal to kApexSharedLibsSubDir
+static constexpr const char* kApexSharedLibsSubDir = "sharedlibs";
 static constexpr const char* kApexSnapshotSubDir = "apexrollback";
 static constexpr const char* kPreRestoreSuffix = "-prerestore";
 

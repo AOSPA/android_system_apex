@@ -182,6 +182,7 @@ java_test_host {
         ":com.android.apex.test.bar_stripped.v2.libvY_prebuilt",
         ":com.android.apex.test.bar.v1.libvX_prebuilt",
         ":com.android.apex.test.bar.v2.libvY_prebuilt",
+        ":com.android.apex.test.baz_stripped.v1.libvX_prebuilt",
         ":com.android.apex.test.foo_stripped.v1.libvX_prebuilt",
         ":com.android.apex.test.foo_stripped.v2.libvY_prebuilt",
         ":com.android.apex.test.foo.v1.libvX_prebuilt",

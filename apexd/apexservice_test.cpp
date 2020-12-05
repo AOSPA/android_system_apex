@@ -1456,8 +1456,12 @@ TEST_F(ApexServiceTest, GetAllPackages) {
     bool shouldBeFactory =
         std::find(factoryStrings.begin(), factoryStrings.end(),
                   packageString) != factoryStrings.end();
-    ASSERT_EQ(shouldBeActive, apexInfo.isActive);
-    ASSERT_EQ(shouldBeFactory, apexInfo.isFactory);
+    ASSERT_EQ(shouldBeActive, apexInfo.isActive)
+        << packageString << " should " << (shouldBeActive ? "" : "not ")
+        << "be active";
+    ASSERT_EQ(shouldBeFactory, apexInfo.isFactory)
+        << packageString << " should " << (shouldBeFactory ? "" : "not ")
+        << "be factory";
   }
 }
 

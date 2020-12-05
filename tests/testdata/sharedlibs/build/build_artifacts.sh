@@ -6,6 +6,7 @@ OUTFILES=(
   com.android.apex.test.bar_stripped.v2.libvY.apex
   com.android.apex.test.bar.v1.libvX.apex
   com.android.apex.test.bar.v2.libvY.apex
+  com.android.apex.test.baz_stripped.v1.libvX.apex
   com.android.apex.test.foo_stripped.v1.libvX.apex
   com.android.apex.test.foo_stripped.v2.libvY.apex
   com.android.apex.test.foo.v1.libvX.apex
@@ -23,6 +24,7 @@ APEX_TARGETS=(
 # "genrule" type build targets to build, and directory they are built from.
 GENRULE_TARGETS=(
   system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.bar:com.android.apex.test.bar_stripped
+  system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.baz:com.android.apex.test.baz_stripped
   system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.foo:com.android.apex.test.foo_stripped
   system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.sharedlibs:com.android.apex.test.sharedlibs_generated
 )
@@ -38,15 +40,8 @@ TMPDIR=$(source build/envsetup.sh > /dev/null; TARGET_PRODUCT= get_build_var TMP
 
 manifestdirs=()
 
-for t in "${GENRULE_TARGETS[@]}"; do
+for t in "${APEX_TARGETS[@]}" "${GENRULE_TARGETS[@]}"; do
     IFS=: read -a ar <<< "${t}"
-    manifestdirs+=( ${ar[0]})
-done
-
-apexrules=()
-for t in "${APEX_TARGETS[@]}"; do
-    IFS=: read -a ar <<< "${t}"
-    apexrules+=( ${ar[1]} )
     manifestdirs+=( ${ar[0]})
 done
 
@@ -76,6 +71,7 @@ for arch in "${archs[@]}"; do
         apexfingerprint="VERSION_${apexversion}"
         sed -i "s/#define FINGERPRINT .*/#define FINGERPRINT \"${apexfingerprint}\"/g" \
         system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.bar/bar_test.cc \
+        system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.baz/baz_test.cc \
         system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.foo/foo_test.cc
 
         for d in "${manifestdirs[@]}"; do
@@ -103,11 +99,10 @@ for arch in "${archs[@]}"; do
             sed -i "s/#define FINGERPRINT .*/#define FINGERPRINT \"${libfingerprint}\"/g" \
             system/apex/tests/testdata/sharedlibs/build/sharedlibstest.cpp
 
-            TARGET_BUILD_APPS="${apexrules[@]}"
             build/soong/soong_ui.bash \
                 --make-mode \
                 TARGET_PRODUCT=aosp_${arch} \
-                dist apps_only sharedlibs_test_genfile
+                dist sharedlibs_test
 
             for t in "${APEX_TARGETS[@]}" "${GENRULE_TARGETS[@]}"; do
                 IFS=: read -a ar <<< "${t}"
@@ -167,6 +162,7 @@ EOF
     cat >> "${tmpfile}" << EOF
   },
   filename: "${outfile}",
+  installable: false,
 }
 EOF
 done
@@ -177,6 +173,7 @@ mv "${tmpfile}" system/apex/tests/testdata/sharedlibs/prebuilts/Android.bp
 sed -i "s/#define FINGERPRINT .*/#define FINGERPRINT \"VERSION_XXX\"/g" \
 system/apex/tests/testdata/sharedlibs/build/sharedlibstest.cpp \
 system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.bar/bar_test.cc \
+system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.baz/baz_test.cc \
 system/apex/tests/testdata/sharedlibs/build/com.android.apex.test.foo/foo_test.cc
 
 for d in "${manifestdirs[@]}"; do

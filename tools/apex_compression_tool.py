@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+#
+# Copyright (C) 2020 The Android Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""apex_compression_tool is a tool that can compress/decompress APEX.
+
+Example:
+  apex_compression_tool compress --input /apex/to/compress --output output/path
+  apex_compression_tool decompress --input /apex/to/decompress --output dir/
+  apex_compression_tool verify-compressed --input /file/to/check
+"""
+from __future__ import print_function
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from zipfile import ZipFile
+
+tool_path_list = None
+
+
+def FindBinaryPath(binary):
+  for path in tool_path_list:
+    binary_path = os.path.join(path, binary)
+    if os.path.exists(binary_path):
+      return binary_path
+  raise Exception('Failed to find binary ' + binary + ' in path ' +
+                  ':'.join(tool_path_list))
+
+
+def RunCommand(cmd, verbose=False, env=None, expected_return_values=None):
+  expected_return_values = expected_return_values or {0}
+  env = env or {}
+  env.update(os.environ.copy())
+
+  cmd[0] = FindBinaryPath(cmd[0])
+
+  if verbose:
+    print('Running: ' + ' '.join(cmd))
+  p = subprocess.Popen(
+      cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+  output, _ = p.communicate()
+
+  if verbose or p.returncode not in expected_return_values:
+    print(output.rstrip())
+
+  assert p.returncode in expected_return_values, 'Failed to execute: ' \
+                                                 + ' '.join(cmd)
+
+  return output, p.returncode
+
+
+def RunCompress(args, work_dir):
+  """RunCompress takes an uncompressed APEX and compresses into compressed APEX
+
+  Compressed apex will contain the following items:
+      - The original uncompressed APEX
+      - Duplicates of various meta files inside the input APEX
+
+  Args:
+      args.input: file path to uncompressed APEX
+      args.output: file path to where compressed APEX will be placed
+      work_dir: file path to a temporary folder
+  Returns:
+      True if compression was executed successfully, otherwise False
+  """
+  cmd = ['soong_zip']
+  cmd.extend(['-o', args.output])
+
+  # We want to put the input apex inside the compressed APEX with name
+  # "original_apex". So we create a hard link and put the renamed file inside
+  # the zip
+  input_apex = os.path.join(work_dir, 'original_apex')
+  os.link(args.input, input_apex)
+  cmd.extend(['-C', work_dir])
+  cmd.extend(['-f', input_apex])
+
+  # We also need to extract some files from inside of input_apex and zip
+  # together with compressed apex
+  with ZipFile(input_apex, 'r') as zip_obj:
+    extract_dir = os.path.join(work_dir, 'extract')
+    for meta_file in ['apex_manifest.json', 'apex_manifest.pb',
+                      'apex_pubkey', 'apex_build_info.pb',
+                      'AndroidManifest.xml']:
+      if meta_file in zip_obj.namelist():
+        zip_obj.extract(meta_file, path=extract_dir)
+        file_path = os.path.join(extract_dir, meta_file)
+        cmd.extend(['-C', extract_dir])
+        cmd.extend(['-f', file_path])
+
+  # Don't forget to compress
+  cmd.extend(['-L', '9'])
+
+  RunCommand(cmd, verbose=True)
+
+  return True
+
+
+def ParseArgs(argv):
+  parser = argparse.ArgumentParser()
+  subparsers = parser.add_subparsers(required=True, dest='cmd')
+
+  # Handle sub-command "compress"
+  parser_compress = subparsers.add_parser('compress',
+                                          help='compresses an APEX')
+  parser_compress.add_argument('--input', type=str, required=True,
+                               help='path to input APEX file that will be '
+                                    'compressed')
+  parser_compress.add_argument('--output', type=str, required=True,
+                               help='output path to compressed APEX file')
+  apex_compression_tool_path_in_environ = \
+    'APEX_COMPRESSION_TOOL_PATH' in os.environ
+  parser_compress.add_argument(
+      '--apex_compression_tool_path',
+      required=not apex_compression_tool_path_in_environ,
+      default=os.environ['APEX_COMPRESSION_TOOL_PATH'].split(':')
+      if apex_compression_tool_path_in_environ else None,
+      type=lambda s: s.split(':'),
+      help="""A list of directories containing all the tools used by
+        apex_compression_tool (e.g. soong_zip etc.) separated by ':'. Can also
+        be set using the APEX_COMPRESSION_TOOL_PATH environment variable""")
+  parser_compress.set_defaults(func=RunCompress)
+
+  return parser.parse_args(argv)
+
+
+class TempDirectory(object):
+
+  def __enter__(self):
+    self.name = tempfile.mkdtemp()
+    return self.name
+
+  def __exit__(self, *unused):
+    shutil.rmtree(self.name)
+
+
+def main(argv):
+  args = ParseArgs(argv)
+
+  global tool_path_list
+  tool_path_list = args.apex_compression_tool_path
+
+  with TempDirectory() as work_dir:
+    success = args.func(args, work_dir)
+
+  if not success:
+    sys.exit(1)
+
+
+if __name__ == '__main__':
+  main(sys.argv[1:])

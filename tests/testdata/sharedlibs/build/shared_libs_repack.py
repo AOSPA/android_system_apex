@@ -237,6 +237,21 @@ def compute_sha512(file_path):
       fb = f.read(block_size)
   return hashbuf.hexdigest()
 
+def parse_fs_config(fs_config):
+  configs = fs_config.splitlines()
+  # Result is set of configurations.
+  # Each configuration is set of items as [file path, uid, gid, mode].
+  # All items are stored as string.
+  result = []
+  for config in configs:
+    result.append(config.split())
+  return result
+
+def config_to_str(configs):
+  result = ''
+  for config in configs:
+    result += ' '.join(config) + '\n'
+  return result
 
 def main(argv):
   args = parse_args(argv)
@@ -255,17 +270,16 @@ def main(argv):
 
   if args.mode == 'strip':
     # Stripping mode. Add a reference to the version of libc++.so to the
-    # sharedApexLibs entry in the manifest, and remove lib64/libc++.so from
-    # the payload.
+    # requireSharedApexLibs entry in the manifest, and remove lib64/libc++.so
+    # from the payload.
     pb = apex_manifest_pb2.ApexManifest()
     with open(container_files['apex_manifest.pb'], 'rb') as f:
       pb.ParseFromString(f.read())
       for lib_path_hash in lib_paths_hashes:
         basename = os.path.basename(lib_path_hash[0])
-        pb.sharedApexLibs.append(basename + ':' + lib_path_hash[1])
+        pb.requireSharedApexLibs.append(basename + ':' + lib_path_hash[1])
         # Replace existing library with symlink
-        symlink_dst = os.path.join('/', 'apex',
-                                   'com.android.apex.test.sharedlibs',
+        symlink_dst = os.path.join('/', 'apex', 'sharedlibs',
                                    libpath, basename, lib_path_hash[1],
                                    basename)
         os.remove(lib_path_hash[0])
@@ -277,16 +291,29 @@ def main(argv):
       # requireNativeLibs: "libc.so"
       # requireNativeLibs: "libdl.so"
       # requireNativeLibs: "libm.so"
-      # sharedApexLibs : "libc++.so:83d8f50..."
+      # requireSharedApexLibs : "libc++.so:83d8f50..."
     with open(container_files['apex_manifest.pb'], 'wb') as f:
       f.write(pb.SerializeToString())
 
   if args.mode == 'sharedlibs':
+    # Sharedlibs mode. Mark in the APEX manifest that this package contains
+    # shared libraries.
+    pb = apex_manifest_pb2.ApexManifest()
+    with open(container_files['apex_manifest.pb'], 'rb') as f:
+      pb.ParseFromString(f.read())
+      pb.provideSharedApexLibs = True
+    with open(container_files['apex_manifest.pb'], 'wb') as f:
+      f.write(pb.SerializeToString())
+
     pb = apex_build_info_pb2.ApexBuildInfo()
     with open(container_files['apex_build_info.pb'], 'rb') as f:
       pb.ParseFromString(f.read())
 
-    canned_fs_config = pb.canned_fs_config.decode('utf-8')
+    canned_fs_config = parse_fs_config(pb.canned_fs_config.decode('utf-8'))
+    source_lib_paths = [os.path.join('/', libpath, lib) for lib in libs]
+
+    canned_fs_config = [config for config in canned_fs_config
+                        if config[0] not in source_lib_paths]
 
     # We assume that libcpp exists in lib64/ or lib/. We'll move it to a
     # directory named lib/libc++.so/${SHA512_OF_LIBCPP}/
@@ -299,15 +326,16 @@ def main(argv):
       os.makedirs(destdir)
       shutil.move(tmp_lib, os.path.join(destdir, basename))
 
-      canned_fs_config += os.path.join('/', libpath, basename,
-                                       lib_path_hash[1], basename) + \
-                                       ' 1000 1000 0644\n'
-      canned_fs_config += '/' + libpath + ' 0 2000 0755\n'
-      canned_fs_config += '/' + libpath + '/' + basename + ' 0 2000 0755\n'
-      canned_fs_config += '/' + libpath + '/' + basename + '/' + \
-                          lib_path_hash[1] + ' 0 2000 0755\n'
+      canned_fs_config.append(
+          ['/' + libpath + '/' + basename, '0', '2000', '0755'])
+      canned_fs_config.append(
+          ['/' + libpath + '/' + basename + '/' + lib_path_hash[1],
+           '0', '2000', '0755'])
+      canned_fs_config.append([os.path.join('/', libpath, basename,
+                                            lib_path_hash[1], basename),
+                               '1000', '1000', '0644'])
 
-    pb.canned_fs_config = canned_fs_config.encode('utf-8')
+    pb.canned_fs_config = config_to_str(canned_fs_config).encode('utf-8')
     with open(container_files['apex_build_info.pb'], 'wb') as f:
       f.write(pb.SerializeToString())
 
