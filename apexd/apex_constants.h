@@ -17,6 +17,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace android {
@@ -39,7 +40,6 @@ static constexpr const char* kApexRoot = "/apex";
 static constexpr const char* kStagedSessionsDir = "/data/app-staging";
 
 static constexpr const char* kApexDataSubDir = "apexdata";
-// TODO(b/161542925) reject any apex with name equal to kApexSharedLibsSubDir
 static constexpr const char* kApexSharedLibsSubDir = "sharedlibs";
 static constexpr const char* kApexSnapshotSubDir = "apexrollback";
 static constexpr const char* kPreRestoreSuffix = "-prerestore";
@@ -60,5 +60,11 @@ static constexpr const char* kApexStatusSysprop = "apexd.status";
 static constexpr const char* kApexStatusStarting = "starting";
 static constexpr const char* kApexStatusActivated = "activated";
 static constexpr const char* kApexStatusReady = "ready";
+
+// Banned APEX names
+static const std::unordered_set<std::string> kBannedApexName = {
+    kApexSharedLibsSubDir,  // To avoid conflicts with predefined
+                            // /apex/sharedlibs directory
+};
 }  // namespace apex
 }  // namespace android

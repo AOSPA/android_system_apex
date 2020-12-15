@@ -173,19 +173,43 @@ class ApexCompressionTest(unittest.TestCase):
 
     return files
 
-  def test_compression(self):
-    uncompressed_apex_fp = os.path.join(get_current_dir(), TEST_APEX + '.apex')
+  def _compress_apex(self, uncompressed_apex_fp):
+    """Returns file path to compressed APEX"""
     fd, compressed_apex_fp = tempfile.mkstemp(
         prefix=self._testMethodName + '_compressed_',
         suffix='.capex')
     os.close(fd)
     self._to_cleanup.append(compressed_apex_fp)
-
     self._run_apex_compression_tool([
         'compress',
         '--input', uncompressed_apex_fp,
         '--output', compressed_apex_fp
     ])
+    return compressed_apex_fp
+
+  def _decompress_apex(self, compressed_apex_fp):
+    """Returns file path to decompressed APEX"""
+    decompressed_apex_fp = tempfile. \
+      NamedTemporaryFile(prefix=self._testMethodName + '_decompressed_',
+                         suffix='.apex').name
+    # Use deapexer to decompress
+    cmd = ['deapexer']
+    cmd.extend([
+        'decompress',
+        '--input', compressed_apex_fp,
+        '--output', decompressed_apex_fp
+    ])
+    run_host_command(cmd, True)
+
+    self.assertTrue(os.path.exists(decompressed_apex_fp),
+                    'Decompressed APEX does not exist')
+    self._to_cleanup.append(decompressed_apex_fp)
+    return decompressed_apex_fp
+
+  def test_compression(self):
+    uncompressed_apex_fp = os.path.join(get_current_dir(), TEST_APEX + '.apex')
+    # TODO(samiul): try compressing a compressed APEX
+    compressed_apex_fp = self._compress_apex(uncompressed_apex_fp)
 
     # Verify output file has been created and is smaller than input file
     uncompressed_file_size = os.path.getsize(uncompressed_apex_fp)
@@ -206,6 +230,26 @@ class ApexCompressionTest(unittest.TestCase):
       if i in content_in_uncompressed_apex:
         self.assertEqual(get_sha1sum(content_in_compressed_apex[i]),
                          get_sha1sum(content_in_uncompressed_apex[i]))
+
+  def test_decompression(self):
+    # setup: create compressed APEX
+    uncompressed_apex_fp = os.path.join(get_current_dir(), TEST_APEX + '.apex')
+    compressed_apex_fp = self._compress_apex(uncompressed_apex_fp)
+
+    # Decompress it
+    decompressed_apex_fp = self._decompress_apex(compressed_apex_fp)
+
+    # Verify decompressed APEX is same as uncompressed APEX
+    self.assertEqual(get_sha1sum(uncompressed_apex_fp),
+                     get_sha1sum(decompressed_apex_fp),
+                     'Decompressed APEX is not same as uncompressed APEX')
+
+    # Try decompressing uncompressed APEX. It should not work.
+    with self.assertRaises(RuntimeError) as error:
+      self._decompress_apex(uncompressed_apex_fp)
+
+    self.assertIn(uncompressed_apex_fp
+                  + ' is not a compressed APEX', str(error.exception))
 
 
 if __name__ == '__main__':

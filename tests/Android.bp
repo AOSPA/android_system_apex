@@ -72,7 +72,6 @@ java_library_host {
     name: "apex_e2e_base_test",
     srcs: ["src/**/ApexE2EBaseHostTest.java"],
     static_libs: [
-        "module_test_util",
         "frameworks-base-hostutils",
         "cts-install-lib-host",
     ],
@@ -132,7 +131,7 @@ java_test_host {
     name: "apex_rollback_tests",
     srcs:  ["src/**/ApexRollbackTests.java", "src/**/ApexTestUtils.java"],
     libs: ["tradefed", "truth-prebuilt"],
-    static_libs: ["module_test_util", "frameworks-base-hostutils", "cts-install-lib-host"],
+    static_libs: ["frameworks-base-hostutils", "cts-install-lib-host"],
     test_config: "apex-rollback-tests.xml",
     test_suites: ["general-tests"],
 
@@ -153,7 +152,6 @@ java_test_host {
     ],
     libs: ["tradefed"],
     static_libs: [
-        "module_test_util",
         "truth-prebuilt",
         "apex_manifest_proto_java",
         "frameworks-base-hostutils",
@@ -187,8 +185,11 @@ java_test_host {
         ":com.android.apex.test.foo_stripped.v2.libvY_prebuilt",
         ":com.android.apex.test.foo.v1.libvX_prebuilt",
         ":com.android.apex.test.foo.v2.libvY_prebuilt",
+        ":com.android.apex.test.pony_stripped.v1.libvZ_prebuilt",
+        ":com.android.apex.test.pony.v1.libvZ_prebuilt",
         ":com.android.apex.test.sharedlibs_generated.v1.libvX_prebuilt",
         ":com.android.apex.test.sharedlibs_generated.v2.libvY_prebuilt",
+        ":com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ_prebuilt",
     ],
     static_libs: [
         "cts-install-lib-host",

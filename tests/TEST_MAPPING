@@ -7,13 +7,15 @@
       "name": "apex_targetprep_tests"
     },
     {
-      "name": "sharedlibs_host_tests"
-    },
-    {
       "name": "sdkextensions_e2e_tests"
     },
     {
       "name": "timezone_data_e2e_tests"
+    }
+  ],
+  "presubmit-large": [
+    {
+      "name": "sharedlibs_host_tests"
     }
   ],
   "postsubmit": [

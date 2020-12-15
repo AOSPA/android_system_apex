@@ -197,6 +197,46 @@ prebuilt_apex {
 }
 
 prebuilt_apex {
+  name: "com.android.apex.test.pony_stripped.v1.libvZ_prebuilt",
+  arch: {
+    arm: {
+      src: "arm/com.android.apex.test.pony_stripped.v1.libvZ.apex",
+    },
+    arm64: {
+      src: "arm64/com.android.apex.test.pony_stripped.v1.libvZ.apex",
+    },
+    x86: {
+      src: "x86/com.android.apex.test.pony_stripped.v1.libvZ.apex",
+    },
+    x86_64: {
+      src: "x86_64/com.android.apex.test.pony_stripped.v1.libvZ.apex",
+    },
+  },
+  filename: "com.android.apex.test.pony_stripped.v1.libvZ.apex",
+  installable: false,
+}
+
+prebuilt_apex {
+  name: "com.android.apex.test.pony.v1.libvZ_prebuilt",
+  arch: {
+    arm: {
+      src: "arm/com.android.apex.test.pony.v1.libvZ.apex",
+    },
+    arm64: {
+      src: "arm64/com.android.apex.test.pony.v1.libvZ.apex",
+    },
+    x86: {
+      src: "x86/com.android.apex.test.pony.v1.libvZ.apex",
+    },
+    x86_64: {
+      src: "x86_64/com.android.apex.test.pony.v1.libvZ.apex",
+    },
+  },
+  filename: "com.android.apex.test.pony.v1.libvZ.apex",
+  installable: false,
+}
+
+prebuilt_apex {
   name: "com.android.apex.test.sharedlibs_generated.v1.libvX_prebuilt",
   arch: {
     arm: {
@@ -233,5 +273,25 @@ prebuilt_apex {
     },
   },
   filename: "com.android.apex.test.sharedlibs_generated.v2.libvY.apex",
+  installable: false,
+}
+
+prebuilt_apex {
+  name: "com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ_prebuilt",
+  arch: {
+    arm: {
+      src: "arm/com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ.apex",
+    },
+    arm64: {
+      src: "arm64/com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ.apex",
+    },
+    x86: {
+      src: "x86/com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ.apex",
+    },
+    x86_64: {
+      src: "x86_64/com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ.apex",
+    },
+  },
+  filename: "com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ.apex",
   installable: false,
 }

@@ -25,7 +25,6 @@ import android.cts.install.lib.host.InstallUtilsHost;
 import android.platform.test.annotations.RequiresDevice;
 
 import com.android.tests.rollback.host.AbandonSessionsRule;
-import com.android.tests.util.ModuleTestUtils;
 import com.android.tradefed.config.Option;
 import com.android.tradefed.config.Option.Importance;
 import com.android.tradefed.device.ITestDevice.ApexInfo;
@@ -55,9 +54,8 @@ public abstract class ApexE2EBaseHostTest extends BaseHostJUnit4Test {
     private static final String USERSPACE_REBOOT_SUPPORTED_PROP =
             "init.userspace_reboot.is_supported";
 
-    /* protected so that derived tests can have access to test utils automatically */
-    protected final ModuleTestUtils mUtils = new ModuleTestUtils(this);
-    private final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
+    // Protected so that derived tests can have access to test utils automatically
+    protected final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
 
     @Rule
     public AbandonSessionsRule mHostTestRule = new AbandonSessionsRule(this);
@@ -110,33 +108,21 @@ public abstract class ApexE2EBaseHostTest extends BaseHostJUnit4Test {
 
     private void uninstallAllApexes() throws Exception {
         for (String filename : getAllApexFilenames()) {
-            ApexInfo apex = mUtils.getApexInfo(mUtils.getTestFile(filename));
+            ApexInfo apex = mHostUtils.getApexInfo(mHostUtils.getTestFile(filename));
             uninstallApex(apex.name);
         }
     }
 
     protected final ApexInfo installApex(String filename) throws Exception {
-        File testAppFile = mUtils.getTestFile(filename);
+        File testAppFile = mHostUtils.getTestFile(filename);
 
-        String installResult = mUtils.installStagedPackage(testAppFile);
+        String installResult = mHostUtils.installStagedPackage(testAppFile);
         assertWithMessage("failed to install test app %s. Reason: %s", filename, installResult)
                 .that(installResult).isNull();
 
-        ApexInfo testApexInfo = mUtils.getApexInfo(testAppFile);
+        ApexInfo testApexInfo = mHostUtils.getApexInfo(testAppFile);
         Assert.assertNotNull(testApexInfo);
         return testApexInfo;
-    }
-
-    protected final void installApexes(String... filenames) throws Exception {
-        // We don't use the installApex method from the super class here, because that won't install
-        // the two apexes into the same session.
-        String[] args = new String[filenames.length + 1];
-        args[0] = "install-multi-package";
-        for (int i = 0; i < filenames.length; i++) {
-            args[i + 1] = mUtils.getTestFile(filenames[i]).getAbsolutePath();
-        }
-        String stdout = getDevice().executeAdbCommand(args);
-        assertThat(stdout).isNotNull();
     }
 
     protected final void reboot(boolean userspaceReboot) throws Exception {

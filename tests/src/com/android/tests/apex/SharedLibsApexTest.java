@@ -48,7 +48,9 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         FOO,
         BAR,
         BAZ,
-        SHAREDLIBS
+        PONY,
+        SHAREDLIBS,
+        SHAREDLIBS_SECONDARY
     }
 
     enum ApexVersion {
@@ -63,7 +65,8 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
 
     enum SharedLibsVersion {
         X,
-        Y
+        Y,
+        Z
     }
 
     /**
@@ -84,8 +87,14 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
             case BAZ:
                 ret.append("baz");
                 break;
+            case PONY:
+                ret.append("pony");
+                break;
             case SHAREDLIBS:
                 ret.append("sharedlibs_generated");
+                break;
+            case SHAREDLIBS_SECONDARY:
+                ret.append("sharedlibs_secondary_generated");
                 break;
         }
 
@@ -113,6 +122,9 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
             case Y:
                 ret.append(".libvY.apex");
                 break;
+            case Z:
+                ret.append(".libvZ.apex");
+                break;
         }
 
         return ret.toString();
@@ -130,6 +142,7 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         for (String apex : new String[]{
                 getTestApex(ApexName.BAR, ApexType.DEFAULT, ApexVersion.ONE, SharedLibsVersion.X),
                 getTestApex(ApexName.FOO, ApexType.DEFAULT, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.PONY, ApexType.DEFAULT, ApexVersion.ONE, SharedLibsVersion.Z),
         }) {
             mPreparer.pushResourceFile(apex,
                     "/system/apex/" + apex);
@@ -143,6 +156,9 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.bar/bin/bar_test");
         assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.pony/bin/pony_test");
+        assertThat(runAsResult).isEqualTo("PONY_VERSION_1 SHARED_LIB_VERSION_Z");
 
         mPreparer.stageMultiplePackages(
             new String[]{
@@ -175,12 +191,18 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         //   package bar version 1 using library version X
         //   package foo version 1 using library version X
         //   package sharedlibs version 1 exporting library version X
+        //
+        //   package pony version 1 using library version Z
+        //   package sharedlibs_secondary version 1 exporting library version Z
 
         for (String apex : new String[]{
                 getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
                 getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.PONY, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.Z),
                 getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.ONE,
                     SharedLibsVersion.X),
+                getTestApex(ApexName.SHAREDLIBS_SECONDARY, ApexType.DEFAULT, ApexVersion.ONE,
+                    SharedLibsVersion.Z),
         }) {
             mPreparer.pushResourceFile(apex,
                     "/system/apex/" + apex);
@@ -194,11 +216,22 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.bar/bin/bar_test");
         assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.pony/bin/pony_test");
+        assertThat(runAsResult).isEqualTo("PONY_VERSION_1 SHARED_LIB_VERSION_Z");
 
         // Updated packages (installed on /data/apex/active):
-        //   package bar version 2 using library version Y
-        //   package foo version 2 using library version Y
-        //   package sharedlibs version 2 exporting library version Y
+        //   package bar version 2 using library version Y               <-- new
+        //   package foo version 2 using library version Y               <-- new
+        //   package sharedlibs version 2 exporting library version Y    <-- new
+        //
+        // Pre-installed:
+        //   (inactive) package bar version 1 using library version X
+        //   (inactive) package foo version 1 using library version X
+        //   package sharedlibs version 1 exporting library version X
+        //
+        //   package pony version 1 using library version Z
+        //   package sharedlibs_secondary version 1 exporting library version Z
 
         mPreparer.stageMultiplePackages(
             new String[]{
@@ -219,20 +252,25 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         runAsResult = getDevice().executeShellCommand(
             "/apex/com.android.apex.test.bar/bin/bar_test");
         assertThat(runAsResult).isEqualTo("BAR_VERSION_2 SHARED_LIB_VERSION_Y");
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.pony/bin/pony_test");
+        assertThat(runAsResult).isEqualTo("PONY_VERSION_1 SHARED_LIB_VERSION_Z");
 
         // Assume that an OTA now adds a package baz on /system needing libraries installed on
         // /system:
-        //
-        // Pre-installed:
-        //   (inactive) package bar version 1 using library version X
-        //   package baz version 1 using library version X
-        //   (inactive) package foo version 1 using library version X
-        //   package sharedlibs version 1 exporting library version X
         //
         // Updated packages (installed on /data/apex/active):
         //   package bar version 2 using library version Y
         //   package foo version 2 using library version Y
         //   package sharedlibs version 2 exporting library version Y
+        //
+        // Pre-installed:
+        //   (inactive) package bar version 1 using library version X
+        //   package baz version 1 using library version X               <-- new
+        //   (inactive) package foo version 1 using library version X
+        //   package sharedlibs version 1 exporting library version X
+        //   package pony version 1 using library version Z
+        //   package sharedlibs_secondary version 1 exporting library version Z
 
         String baz_apex =
                 getTestApex(ApexName.BAZ, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X);
@@ -248,5 +286,8 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         runAsResult = getDevice().executeShellCommand(
             "/apex/com.android.apex.test.baz/bin/baz_test");
         assertThat(runAsResult).isEqualTo("BAZ_VERSION_1 SHARED_LIB_VERSION_X");
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.pony/bin/pony_test");
+        assertThat(runAsResult).isEqualTo("PONY_VERSION_1 SHARED_LIB_VERSION_Z");
     }
 }

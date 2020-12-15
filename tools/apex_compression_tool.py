@@ -69,8 +69,9 @@ def RunCompress(args, work_dir):
   """RunCompress takes an uncompressed APEX and compresses into compressed APEX
 
   Compressed apex will contain the following items:
-      - The original uncompressed APEX
-      - Duplicates of various meta files inside the input APEX
+      - original_apex: The original uncompressed APEX
+      - Duplicates of various meta files inside the input APEX, e.g
+        AndroidManifest.xml, public_key
 
   Args:
       args.input: file path to uncompressed APEX
@@ -79,20 +80,23 @@ def RunCompress(args, work_dir):
   Returns:
       True if compression was executed successfully, otherwise False
   """
+  global tool_path_list
+  tool_path_list = args.apex_compression_tool_path
+
   cmd = ['soong_zip']
   cmd.extend(['-o', args.output])
 
   # We want to put the input apex inside the compressed APEX with name
   # "original_apex". So we create a hard link and put the renamed file inside
   # the zip
-  input_apex = os.path.join(work_dir, 'original_apex')
-  os.link(args.input, input_apex)
+  original_apex = os.path.join(work_dir, 'original_apex')
+  os.link(args.input, original_apex)
   cmd.extend(['-C', work_dir])
-  cmd.extend(['-f', input_apex])
+  cmd.extend(['-f', original_apex])
 
-  # We also need to extract some files from inside of input_apex and zip
+  # We also need to extract some files from inside of original_apex and zip
   # together with compressed apex
-  with ZipFile(input_apex, 'r') as zip_obj:
+  with ZipFile(original_apex, 'r') as zip_obj:
     extract_dir = os.path.join(work_dir, 'extract')
     for meta_file in ['apex_manifest.json', 'apex_manifest.pb',
                       'apex_pubkey', 'apex_build_info.pb',
@@ -151,9 +155,6 @@ class TempDirectory(object):
 
 def main(argv):
   args = ParseArgs(argv)
-
-  global tool_path_list
-  tool_path_list = args.apex_compression_tool_path
 
   with TempDirectory() as work_dir:
     success = args.func(args, work_dir)

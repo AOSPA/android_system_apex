@@ -370,6 +370,7 @@ cc_test {
     ":apex.apexd_test_prepostinstall.fail",
     ":apex.apexd_test_v2",
     ":apex.corrupted_b146895998",
+    ":apex.banned_name",
     ":gen_key_mismatch_apex",
     ":gen_manifest_mismatch_apex",
     ":gen_manifest_mismatch_apex_no_hashtree",

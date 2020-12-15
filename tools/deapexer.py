@@ -240,6 +240,39 @@ def RunInfo(args):
   print(apex_manifest.toJsonString(manifest))
 
 
+def RunDecompress(args):
+  """RunDecompress takes path to compressed APEX and decompresses it to
+  produce the original uncompressed APEX at give output path
+
+  See apex_compression_tool.py#RunCompress for details on compressed APEX
+  structure.
+
+  Args:
+      args.input: file path to compressed APEX
+      args.output: file path to where decompressed APEX will be placed
+  Returns:
+      True if decompression was executed successfully, otherwise False
+  """
+  compressed_apex_fp = args.input
+  decompressed_apex_fp = args.output
+
+  if os.path.exists(decompressed_apex_fp):
+    print("Output path '" + decompressed_apex_fp + "' already exists")
+    sys.exit(1)
+
+  with zipfile.ZipFile(compressed_apex_fp, 'r') as zip_obj:
+    if 'original_apex' not in zip_obj.namelist():
+      print(compressed_apex_fp + ' is not a compressed APEX. Missing '
+                                 "'original_apex' file inside it.")
+      sys.exit(1)
+    # Rename original_apex file to what user provided as output filename
+    original_apex_info = zip_obj.getinfo('original_apex')
+    original_apex_info.filename = os.path.basename(decompressed_apex_fp)
+    # Extract the original_apex as desired name
+    zip_obj.extract(original_apex_info,
+                    path=os.path.dirname(decompressed_apex_fp))
+
+
 def main(argv):
   parser = argparse.ArgumentParser()
 
@@ -265,6 +298,18 @@ def main(argv):
   parser_info = subparsers.add_parser('info', help='prints APEX manifest')
   parser_info.add_argument('apex', type=str, help='APEX file')
   parser_info.set_defaults(func=RunInfo)
+
+  # Handle sub-command "decompress"
+  parser_decompress = subparsers.add_parser('decompress',
+                                            help='decompresses a compressed '
+                                                 'APEX')
+  parser_decompress.add_argument('--input', type=str, required=True,
+                                 help='path to compressed APEX file that '
+                                      'will be decompressed')
+  parser_decompress.add_argument('--output', type=str, required=True,
+                                 help='output directory path where '
+                                      'decompressed APEX will be extracted')
+  parser_decompress.set_defaults(func=RunDecompress)
 
   args = parser.parse_args(argv)
 

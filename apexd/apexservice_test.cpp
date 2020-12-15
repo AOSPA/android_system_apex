@@ -2942,6 +2942,21 @@ TEST_F(ApexServiceActivationNoCode, NoCodeApexIsNotExecutable) {
   EXPECT_TRUE(found_apex_mountpoint);
 }
 
+struct BannedNameProvider {
+  static std::string GetTestName() { return "sharedlibs.apex"; }
+  static std::string GetPackageName() { return "sharedlibs"; }
+};
+
+class ApexServiceActivationBannedName
+    : public ApexServiceActivationTest<BannedNameProvider> {
+ public:
+  ApexServiceActivationBannedName() : ApexServiceActivationTest(false) {}
+};
+
+TEST_F(ApexServiceActivationBannedName, ApexWithBannedNameCannotBeActivated) {
+  ASSERT_FALSE(
+      IsOk(service_->activatePackage(installer_->test_installed_file)));
+}
 }  // namespace apex
 }  // namespace android
 

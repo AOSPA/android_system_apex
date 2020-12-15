@@ -51,10 +51,10 @@ python_binary_host {
 }
 
 python_test_host {
-    name: "apex_compression_tool_test",
-    main: "apex_compression_tool_test.py",
+    name: "apex_compression_test",
+    main: "apex_compression_test.py",
     srcs: [
-        "apex_compression_tool_test.py",
+        "apex_compression_test.py",
     ],
     data: [
         ":com.android.example.apex",
@@ -70,6 +70,7 @@ python_test_host {
     test_suites: ["general-tests"],
     required: [
         "apex_compression_tool",
+        "deapexer",
     ],
 }
 

@@ -1025,13 +1025,22 @@ Result<void> resumeRevertIfNeeded() {
 Result<void> activateSharedLibsPackage(const std::string& mountPoint) {
   for (const auto& libPath : {"lib", "lib64"}) {
     std::string apexLibPath = mountPoint + "/" + libPath;
-    if (!std::filesystem::exists(apexLibPath)) {
+    auto lib_dir = PathExists(apexLibPath);
+    if (!lib_dir.ok() || !*lib_dir) {
       continue;
     }
 
-    for (const auto& lib_entry :
-         std::filesystem::directory_iterator(apexLibPath)) {
+    auto iter = std::filesystem::directory_iterator(apexLibPath);
+    std::error_code ec;
+
+    while (iter != std::filesystem::end(iter)) {
+      const auto& lib_entry = *iter;
       if (!lib_entry.is_directory()) {
+        iter = iter.increment(ec);
+        if (ec) {
+          return Error() << "Failed to scan " << apexLibPath << " : "
+                         << ec.message();
+        }
         continue;
       }
 
@@ -1040,34 +1049,53 @@ Result<void> activateSharedLibsPackage(const std::string& mountPoint) {
           StringPrintf("%s/%s/%s/%s", kApexRoot, kApexSharedLibsSubDir, libPath,
                        library_name.c_str());
 
-      if (!std::filesystem::exists(library_symlink_dir)) {
-        std::error_code error_code;
-        std::filesystem::create_directory(library_symlink_dir, error_code);
-        if (error_code) {
+      auto symlink_dir = PathExists(library_symlink_dir);
+      if (!symlink_dir.ok() || !*symlink_dir) {
+        std::filesystem::create_directory(library_symlink_dir, ec);
+        if (ec) {
           return Error() << "Failed to create directory " << library_symlink_dir
-                         << ": " << error_code.message();
+                         << ": " << ec.message();
         }
       }
 
-      for (const auto& lib_items :
-           std::filesystem::directory_iterator(lib_entry.path().string())) {
+      auto inner_iter =
+          std::filesystem::directory_iterator(lib_entry.path().string());
+
+      while (inner_iter != std::filesystem::end(inner_iter)) {
+        const auto& lib_items = *inner_iter;
         const auto hash_value = lib_items.path().filename();
         const std::string library_symlink_hash = StringPrintf(
             "%s/%s", library_symlink_dir.c_str(), hash_value.c_str());
 
-        if (std::filesystem::exists(library_symlink_hash)) {
+        auto hash_dir = PathExists(library_symlink_hash);
+        if (hash_dir.ok() && *hash_dir) {
           // TODO(b/161542925) : Handle symlink from different sharedlibs APEX
           // with same hash value
+          inner_iter = inner_iter.increment(ec);
+          if (ec) {
+            return Error() << "Failed to scan " << lib_entry.path().string()
+                           << " : " << ec.message();
+          }
           continue;
         }
-        std::error_code error_code;
-        std::filesystem::create_directory_symlink(
-            lib_items.path(), library_symlink_hash, error_code);
-        if (error_code) {
+        std::filesystem::create_directory_symlink(lib_items.path(),
+                                                  library_symlink_hash, ec);
+        if (ec) {
           return Error() << "Failed to create symlink from " << lib_items.path()
-                         << " to " << library_symlink_hash
-                         << error_code.message();
+                         << " to " << library_symlink_hash << ec.message();
         }
+
+        inner_iter = inner_iter.increment(ec);
+        if (ec) {
+          return Error() << "Failed to scan " << lib_entry.path().string()
+                         << " : " << ec.message();
+        }
+      }
+
+      iter = iter.increment(ec);
+      if (ec) {
+        return Error() << "Failed to scan " << apexLibPath << " : "
+                       << ec.message();
       }
     }
   }
@@ -1075,8 +1103,16 @@ Result<void> activateSharedLibsPackage(const std::string& mountPoint) {
   return {};
 }
 
+bool isValidPackageName(const std::string& package_name) {
+  return kBannedApexName.count(package_name) == 0;
+}
+
 Result<void> activatePackageImpl(const ApexFile& apex_file) {
   const ApexManifest& manifest = apex_file.GetManifest();
+
+  if (!isValidPackageName(manifest.name())) {
+    return Errorf("Package name {} is not allowed.", manifest.name());
+  }
 
   // See whether we think it's active, and do not allow to activate the same
   // version. Also detect whether this is the highest version.
@@ -1372,30 +1408,6 @@ Result<std::vector<ApexFile>> ScanApexFiles(const char* apex_package_dir) {
 }
 
 Result<void> ActivateApexPackages(const std::vector<ApexFile>& apexes) {
-  // Creates /apex/sharedlibs/lib{,64}.
-  std::string sharedLibsSubDir =
-      StringPrintf("%s/%s", kApexRoot, kApexSharedLibsSubDir);
-  if (!std::filesystem::exists(sharedLibsSubDir)) {
-    std::error_code error_code;
-    std::filesystem::create_directory(sharedLibsSubDir, error_code);
-    if (error_code) {
-      return Error() << "Failed to create directory " << sharedLibsSubDir
-                     << ": " << error_code.message();
-    }
-  }
-  for (const auto& libPath : {"lib", "lib64"}) {
-    std::string apexLibPath =
-        StringPrintf("%s/%s", sharedLibsSubDir.c_str(), libPath);
-    if (!std::filesystem::exists(apexLibPath)) {
-      std::error_code error_code;
-      std::filesystem::create_directory(apexLibPath, error_code);
-      if (error_code) {
-        return Error() << "Failed to create directory " << apexLibPath << ": "
-                       << error_code.message();
-      }
-    }
-  }
-
   const auto& packages_with_code = GetActivePackagesMap();
   size_t failed_cnt = 0;
   size_t skipped_cnt = 0;
@@ -2025,6 +2037,36 @@ Result<void> revertActiveSessionsAndReboot(
   return {};
 }
 
+Result<void> createSharedLibsApexDir() {
+  // Creates /apex/sharedlibs/lib{,64} for SharedLibs APEXes.
+  std::string sharedLibsSubDir =
+      StringPrintf("%s/%s", kApexRoot, kApexSharedLibsSubDir);
+  auto dir_exists = PathExists(sharedLibsSubDir);
+  if (!dir_exists.ok() || !*dir_exists) {
+    std::error_code error_code;
+    std::filesystem::create_directory(sharedLibsSubDir, error_code);
+    if (error_code) {
+      return Error() << "Failed to create directory " << sharedLibsSubDir
+                     << ": " << error_code.message();
+    }
+  }
+  for (const auto& libPath : {"lib", "lib64"}) {
+    std::string apexLibPath =
+        StringPrintf("%s/%s", sharedLibsSubDir.c_str(), libPath);
+    auto lib_dir_exists = PathExists(apexLibPath);
+    if (!lib_dir_exists.ok() || !*lib_dir_exists) {
+      std::error_code error_code;
+      std::filesystem::create_directory(apexLibPath, error_code);
+      if (error_code) {
+        return Error() << "Failed to create directory " << apexLibPath << ": "
+                       << error_code.message();
+      }
+    }
+  }
+
+  return {};
+}
+
 int onBootstrap() {
   Result<void> preAllocate = preAllocateLoopDevices();
   if (!preAllocate.ok()) {
@@ -2038,6 +2080,13 @@ int onBootstrap() {
   Result<void> status = instance.Initialize(kBootstrapApexDirs);
   if (!status.ok()) {
     LOG(ERROR) << "Failed to collect APEX keys : " << status.error();
+    return 1;
+  }
+
+  // Create directories for APEX shared libraries.
+  auto sharedlibs_apex_dir = createSharedLibsApexDir();
+  if (!sharedlibs_apex_dir.ok()) {
+    LOG(ERROR) << sharedlibs_apex_dir.error();
     return 1;
   }
 
@@ -2129,6 +2178,12 @@ void onStart() {
                 << "). Starting a revert";
       revertActiveSessions("");
     }
+  }
+
+  // Create directories for APEX shared libraries.
+  auto sharedlibs_apex_dir = createSharedLibsApexDir();
+  if (!sharedlibs_apex_dir.ok()) {
+    LOG(ERROR) << sharedlibs_apex_dir.error();
   }
 
   // Activate APEXes from /data/apex. If one in the directory is newer than the

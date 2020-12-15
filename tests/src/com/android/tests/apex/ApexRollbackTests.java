@@ -25,7 +25,6 @@ import static org.junit.Assume.assumeTrue;
 import android.cts.install.lib.host.InstallUtilsHost;
 
 import com.android.tests.rollback.host.AbandonSessionsRule;
-import com.android.tests.util.ModuleTestUtils;
 import com.android.tradefed.device.DeviceNotAvailableException;
 import com.android.tradefed.device.ITestDevice;
 import com.android.tradefed.device.ITestDevice.ApexInfo;
@@ -47,7 +46,6 @@ import java.util.Set;
  */
 @RunWith(DeviceJUnit4ClassRunner.class)
 public class ApexRollbackTests extends BaseHostJUnit4Test {
-    private final ModuleTestUtils mUtils = new ModuleTestUtils(this);
     private final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
     @Rule
     public AbandonSessionsRule mHostTestRule = new AbandonSessionsRule(this);
@@ -102,7 +100,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         String crashingProcess = device.getProperty("sys.init.updatable_crashing_process_name");
         assumeFalse(
                 "Device already has a crashing process: " + crashingProcess, hasCrashingProcess);
-        File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
         // To simulate an apex update that causes a boot loop, we install a
         // trigger_watchdog.rc file that arranges for a trigger_watchdog.sh
@@ -113,7 +111,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         // boot loop.
         assertThat(device.setProperty("persist.debug.trigger_watchdog.apex",
                 "com.android.apex.cts.shim@2")).isTrue();
-        String error = mUtils.installStagedPackage(apexFile);
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertThat(error).isNull();
 
         String sessionIdToCheck = device.executeShellCommand("pm get-stagedsessions --only-ready "
@@ -150,7 +148,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeFalse("Fs checkpointing is enabled", mHostUtils.isCheckpointSupported());
 
-        File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
         ITestDevice device = getDevice();
         assertThat(device.setProperty("persist.debug.trigger_reboot_after_activation",
@@ -158,7 +156,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         assertThat(device.setProperty("debug.trigger_reboot_once_after_activation",
                 "1")).isTrue();
 
-        String error = mUtils.installStagedPackage(apexFile);
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertThat(error).isNull();
 
         String sessionIdToCheck = device.executeShellCommand("pm get-stagedsessions --only-ready "
@@ -188,14 +186,14 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
-        File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
         ITestDevice device = getDevice();
         assertThat(device.setProperty("persist.debug.trigger_reboot_after_activation",
                 "com.android.apex.cts.shim@2.apex")).isTrue();
         assertThat(device.setProperty("persist.debug.trigger_reboot_twice_after_activation",
                 "1")).isTrue();
-        String error = mUtils.installStagedPackage(apexFile);
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertThat(error).isNull();
 
         String sessionIdToCheck = device.executeShellCommand("pm get-stagedsessions --only-ready "
@@ -226,14 +224,14 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
-        File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
         ITestDevice device = getDevice();
         assertThat(device.setProperty("persist.debug.trigger_reboot_after_activation",
                 "com.android.apex.cts.shim@2.apex")).isTrue();
         assertThat(device.setProperty("debug.trigger_reboot_once_after_activation",
                 "1")).isTrue();
-        String error = mUtils.installStagedPackage(apexFile);
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertThat(error).isNull();
 
         String sessionIdToCheck = device.executeShellCommand("pm get-stagedsessions --only-ready "
@@ -287,11 +285,11 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
                 getDevice().getBooleanProperty("init.userspace_reboot.is_supported", false));
         assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
-        File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
         // Simulate failure in userspace reboot by triggering a full reboot in the middle of the
         // boot sequence.
         assertThat(getDevice().setProperty("test.apex_revert_test_force_reboot", "1")).isTrue();
-        String error = mUtils.installStagedPackage(apexFile);
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertWithMessage("Failed to stage com.android.apex.cts.shim.v2.apex : %s", error).that(
                 error).isNull();
         // After we reboot the device, apexd will apply the update
@@ -316,12 +314,12 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
                 getDevice().getBooleanProperty("init.userspace_reboot.is_supported", false));
         assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
-        File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
         // Simulate failure in userspace reboot by triggering a full reboot in the middle of the
         // boot sequence.
         assertThat(getDevice().setProperty("test.apex_userspace_reboot_simulate_shutdown_failed",
                 "1")).isTrue();
-        String error = mUtils.installStagedPackage(apexFile);
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertWithMessage("Failed to stage com.android.apex.cts.shim.v2.apex : %s", error).that(
                 error).isNull();
         // After the userspace reboot started, we simulate it's failure by rebooting device during
@@ -349,12 +347,12 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
                 getDevice().getBooleanProperty("init.userspace_reboot.is_supported", false));
         assumeTrue("Device doesn't support fs checkpointing", mHostUtils.isCheckpointSupported());
 
-        File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
         // Simulate failure in userspace reboot by triggering a full reboot in the middle of the
         // boot sequence.
         assertThat(getDevice().setProperty("test.apex_userspace_reboot_simulate_remount_failed",
                 "1")).isTrue();
-        String error = mUtils.installStagedPackage(apexFile);
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertWithMessage("Failed to stage com.android.apex.cts.shim.v2.apex : %s", error).that(
                 error).isNull();
         // After we reboot the device, apexd will apply the update
@@ -380,7 +378,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
             // revert mechanism in apexd. Since there is nothing to revert, this should be a no-op
             // and device will boot successfully.
             getDevice().setProperty("persist.debug.trigger_updatable_crashing_for_testing", "1");
-            assertThat(getDevice().pushFile(mUtils.getTestFile("apex.apexd_test_v2.apex"),
+            assertThat(getDevice().pushFile(mHostUtils.getTestFile("apex.apexd_test_v2.apex"),
                     "/data/apex/active/apexd_test_v2.apex")).isTrue();
             getDevice().reboot();
             assertWithMessage("Timed out waiting for device to boot").that(
@@ -392,7 +390,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
             ITestDevice.ApexInfo testApex = new ITestDevice.ApexInfo(
                     "com.android.apex.cts.shim", 2L);
             assertThat(activeApexes).doesNotContain(testApex);
-            mUtils.waitForFileDeleted("/data/apex/active/apexd_test_v2.apex",
+            mHostUtils.waitForFileDeleted("/data/apex/active/apexd_test_v2.apex",
                     Duration.ofMinutes(3));
         } finally {
             getDevice().executeShellV2Command("rm /data/apex/active/apexd_test_v2.apex");
@@ -415,7 +413,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
                 device.getProperty("sys.init.updatable_crashing_process_name");
         assumeFalse(
                 "Device already has a crashing process: " + crashingProcess, hasCrashingProcess);
-        final File apexFile = mUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        final File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
 
         // To simulate an apex update that causes a boot loop, we install a
         // trigger_watchdog.rc file that arranges for a trigger_watchdog.sh
@@ -426,7 +424,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
         // boot loop.
         assertThat(device.setProperty("persist.debug.trigger_watchdog.apex",
                 "com.android.apex.cts.shim@2")).isTrue();
-        final String error = mUtils.installStagedPackage(apexFile);
+        final String error = mHostUtils.installStagedPackage(apexFile);
         assertThat(error).isNull();
 
         final String sessionIdToCheck = device.executeShellCommand("pm get-stagedsessions "

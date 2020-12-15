@@ -12,6 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+
+cc_binary {
+    name: "noop",
+    srcs: ["noop.cc"],
+    shared_libs: [
+      "libsharedlibtest",
+    ],
+    apex_available: [
+      "com.android.apex.test.sharedlibs_stub",
+      "com.android.apex.test.sharedlibs_secondary_stub",
+    ],
+}
+
 python_binary_host {
     name: "shared_libs_repack",
     srcs: [
@@ -51,6 +64,8 @@ cc_library_shared {
         "com.android.apex.test.bar",
         "com.android.apex.test.baz",
         "com.android.apex.test.foo",
+        "com.android.apex.test.pony",
         "com.android.apex.test.sharedlibs_stub",
+        "com.android.apex.test.sharedlibs_secondary_stub",
     ],
 }
