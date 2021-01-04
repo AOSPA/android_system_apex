@@ -35,6 +35,7 @@
 #include <utility>
 
 using android::base::ConsumeSuffix;
+using android::base::EndsWith;
 using android::base::ParseInt;
 using android::base::ReadFileToString;
 using android::base::Result;
@@ -190,6 +191,7 @@ void NormalizeIfDeleted(MountedApexData* apex_data) {
 
 Result<MountedApexData> resolveMountInfo(const BlockDevice& block,
                                          const std::string& mountPoint) {
+  bool temp_mount = EndsWith(mountPoint, ".tmp");
   // Now, see if it is dm-verity or loop mounted
   switch (block.GetType()) {
     case LoopDevice: {
@@ -199,7 +201,8 @@ Result<MountedApexData> resolveMountInfo(const BlockDevice& block,
       }
       auto result = MountedApexData(block.DevPath(), *backingFile, mountPoint,
                                     /* device_name= */ "",
-                                    /* hashtree_loop_name= */ "");
+                                    /* hashtree_loop_name= */ "",
+                                    /* is_temp_mount */ temp_mount);
       NormalizeIfDeleted(&result);
       return result;
     }
@@ -211,6 +214,7 @@ Result<MountedApexData> resolveMountInfo(const BlockDevice& block,
       MountedApexData result;
       result.mount_point = mountPoint;
       result.device_name = *name;
+      result.is_temp_mount = temp_mount;
       if (auto status = PopulateLoopInfo(block, &result); !status.ok()) {
         return status.error();
       }

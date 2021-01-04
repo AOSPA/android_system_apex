@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 #define LOG_TAG "apexd"
 
-#include "apexd_prop.h"
+#include "apexd_lifecycle.h"
 
 #include <android-base/logging.h>
 #include <android-base/properties.h>
@@ -30,13 +30,14 @@ using android::base::WaitForProperty;
 namespace android {
 namespace apex {
 
-// TODO(b/160001168): Handle boot completed logic in a separate class.
-std::atomic<bool> gIsBootCompleted = false;
+bool ApexdLifecycle::isBooting() {
+  auto status = GetProperty(kApexStatusSysprop, "");
+  return status != kApexStatusReady && status != kApexStatusActivated;
+}
 
-void markBootCompleted() { gIsBootCompleted = true; }
-
-void waitForBootStatus(Result<void> (&revert_fn)(const std::string&)) {
-  while (!gIsBootCompleted) {
+void ApexdLifecycle::waitForBootStatus(
+    Result<void> (&revert_fn)(const std::string&)) {
+  while (!boot_completed_) {
     // Check for change in either crashing property or sys.boot_completed
     // Wait for updatable_crashing property change for most of the time
     // (arbitrary 30s), briefly check if boot has completed successfully,
@@ -64,5 +65,8 @@ void waitForBootStatus(Result<void> (&revert_fn)(const std::string&)) {
     }
   }
 }
+
+void ApexdLifecycle::markBootCompleted() { boot_completed_ = true; }
+
 }  // namespace apex
 }  // namespace android

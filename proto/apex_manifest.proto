@@ -55,4 +55,9 @@ message ApexManifest {
   // This is supposed to be filled by the build system with libraries which are
   // marked as "is_jni: true" from the list of "native_shared_libs".
   repeated string jniLibs = 9;
+
+  // List of libs required that are located in a shared libraries APEX.
+  // Format of the content is 'library:hash'.
+  // Example) libc++.so:83d8f50...
+  repeated string sharedApexLibs = 10;
 }

@@ -74,6 +74,7 @@ java_library_host {
     static_libs: [
         "module_test_util",
         "frameworks-base-hostutils",
+        "cts-install-lib-host",
     ],
     libs: [
         "tradefed",
@@ -127,21 +128,11 @@ prebuilt_etc {
     installable: false,
 }
 
-cc_binary {
-    name: "sample_prefer32_binary",
-    srcs: ["sample_prefer32_binary.cc"],
-    target: {
-        android: {
-            compile_multilib: "prefer32",
-        },
-    },
-}
-
 java_test_host {
     name: "apex_rollback_tests",
     srcs:  ["src/**/ApexRollbackTests.java", "src/**/ApexTestUtils.java"],
     libs: ["tradefed", "truth-prebuilt"],
-    static_libs: ["module_test_util", "frameworks-base-hostutils"],
+    static_libs: ["module_test_util", "frameworks-base-hostutils", "cts-install-lib-host"],
     test_config: "apex-rollback-tests.xml",
     test_suites: ["general-tests"],
 
@@ -165,7 +156,8 @@ java_test_host {
         "module_test_util",
         "truth-prebuilt",
         "apex_manifest_proto_java",
-        "frameworks-base-hostutils"
+        "frameworks-base-hostutils",
+        "cts-install-lib-host"
     ],
     test_config: "apexd-host-tests.xml",
     test_suites: ["general-tests"],
@@ -177,4 +169,31 @@ java_test_host {
         ":com.android.apex.cts.shim.v2_prebuilt",
         ":com.android.apex.cts.shim.v2_no_pb",
     ],
+}
+
+java_test_host {
+    name: "sharedlibs_host_tests",
+    srcs: [
+        "src/**/SharedLibsApexTest.java"
+    ],
+    libs: ["tradefed"],
+    java_resources: [
+        ":com.android.apex.test.bar_stripped.v1.libvX_prebuilt",
+        ":com.android.apex.test.bar_stripped.v2.libvY_prebuilt",
+        ":com.android.apex.test.bar.v1.libvX_prebuilt",
+        ":com.android.apex.test.bar.v2.libvY_prebuilt",
+        ":com.android.apex.test.foo_stripped.v1.libvX_prebuilt",
+        ":com.android.apex.test.foo_stripped.v2.libvY_prebuilt",
+        ":com.android.apex.test.foo.v1.libvX_prebuilt",
+        ":com.android.apex.test.foo.v2.libvY_prebuilt",
+        ":com.android.apex.test.sharedlibs_generated.v1.libvX_prebuilt",
+        ":com.android.apex.test.sharedlibs_generated.v2.libvY_prebuilt",
+    ],
+    static_libs: [
+        "cts-install-lib-host",
+        "frameworks-base-hostutils",
+        "truth-prebuilt"
+    ],
+    test_config: "shared-libs-apex-tests.xml",
+    test_suites: ["general-tests"],
 }

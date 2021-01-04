@@ -32,15 +32,20 @@ import tempfile
 import zipfile
 import apex_manifest
 
+BLOCK_SIZE = 4096
+
 class ApexImageEntry(object):
 
-  def __init__(self, name, base_dir, permissions, size, is_directory=False, is_symlink=False):
+  def __init__(self, name, base_dir, permissions, size, ino, extents, is_directory=False,
+               is_symlink=False):
     self._name = name
     self._base_dir = base_dir
     self._permissions = permissions
     self._size = size
     self._is_directory = is_directory
     self._is_symlink = is_symlink
+    self._ino = ino
+    self._extents = extents
 
   @property
   def name(self):
@@ -69,6 +74,14 @@ class ApexImageEntry(object):
   @property
   def size(self):
     return self._size
+
+  @property
+  def ino(self):
+    return self._ino
+
+  @property
+  def extents(self):
+    return self._extents
 
   def __str__(self):
     ret = ''
@@ -152,10 +165,43 @@ class Apex(object):
       name = parts[5]
       if not name:
         continue
+      ino = parts[1]
       bits = parts[2]
       size = parts[6]
+      extents = []
+      is_symlink = bits[1]=='2'
+      is_directory=bits[1]=='4'
+
+      if not is_symlink and not is_directory:
+        process = subprocess.Popen([self._debugfs, '-R', 'dump_extents <%s>' % ino,
+                                    self._payload], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    universal_newlines=True)
+        stdout, _ = process.communicate()
+        # Output of dump_extents for an inode fragmented in 3 blocks (length and addresses represent
+        # block-sized sections):
+        # Level Entries       Logical      Physical Length Flags
+        # 0/ 0   1/  3     0 -     0    18 -    18      1
+        # 0/ 0   2/  3     1 -    15    20 -    34     15
+        # 0/ 0   3/  3    16 -  1863    37 -  1884   1848
+        res = str(stdout).splitlines()
+        res.pop(0) # the first line contains only columns names
+        left_length = int(size)
+        try: # dump_extents sometimes has an unexpected output
+          for line in res:
+            tokens = line.split()
+            offset = int(tokens[7]) * BLOCK_SIZE
+            length = min(int(tokens[-1]) * BLOCK_SIZE, left_length)
+            left_length -= length
+            extents.append((offset, length))
+          if (left_length != 0): # dump_extents sometimes fails to display "hole" blocks
+            raise ValueError
+        except:
+          extents = [] # [] means that we failed to retrieve the file location successfully
+
       entries.append(ApexImageEntry(name, base_dir=path, permissions=int(bits[3:], 8), size=size,
-                                    is_directory=bits[1]=='4', is_symlink=bits[1]=='2'))
+                                    is_directory=is_directory, is_symlink=is_symlink, ino=ino,
+                                    extents=extents))
+
     return ApexImageDirectory(path, entries, self)
 
   def _extract(self, path, dest):
@@ -172,10 +218,13 @@ def RunList(args):
     for e in apex.list(is_recursive=True):
       if e.is_directory:
         continue
+      res = ''
       if args.size:
-        print(e.size, e.full_path)
-      else:
-        print(e.full_path)
+        res += e.size + ' '
+      res += e.full_path
+      if args.extents:
+        res += ' [' + '-'.join(str(x) for x in e.extents) + ']'
+      print(res)
 
 
 def RunExtract(args):
@@ -204,6 +253,7 @@ def main(argv):
   parser_list = subparsers.add_parser('list', help='prints content of an APEX to stdout')
   parser_list.add_argument('apex', type=str, help='APEX file')
   parser_list.add_argument('--size', help='also show the size of the files', action="store_true")
+  parser_list.add_argument('--extents', help='also show the location of the files', action="store_true")
   parser_list.set_defaults(func=RunList)
 
   parser_extract = subparsers.add_parser('extract', help='extracts content of an APEX to the given '

@@ -24,13 +24,15 @@
 
 #include "apexd.h"
 #include "apexd_checkpoint_vold.h"
+#include "apexd_lifecycle.h"
 #include "apexd_prepostinstall.h"
-#include "apexd_prop.h"
 #include "apexservice.h"
 
 #include <android-base/properties.h>
 
 namespace {
+android::apex::ApexdLifecycle& lifecycle =
+    android::apex::ApexdLifecycle::getInstance();
 
 int HandleSubcommand(char** argv) {
   if (strcmp("--pre-install", argv[1]) == 0) {
@@ -100,7 +102,7 @@ void InstallSigtermSignalHandler() {
 int main(int /*argc*/, char** argv) {
   android::base::InitLogging(argv, &android::base::KernelLogger);
   // TODO(b/158468454): add a -v flag or an external setting to change severity.
-  android::base::SetMinimumLogSeverity(android::base::VERBOSE);
+  android::base::SetMinimumLogSeverity(android::base::INFO);
 
   // set umask to 022 so that files/dirs created are accessible to other
   // processes e.g.) apex-info-file.xml is supposed to be read by other
@@ -114,7 +116,7 @@ int main(int /*argc*/, char** argv) {
     LOG(INFO) << "This device does not support updatable APEX. Exiting";
     if (!has_subcommand) {
       // mark apexd as activated so that init can proceed
-      android::apex::onAllPackagesActivated();
+      android::apex::onAllPackagesActivated(/*is_bootstrap=*/false);
     } else if (strcmp("--snapshotde", argv[1]) == 0) {
       // mark apexd as ready
       android::apex::onAllPackagesReady();
@@ -137,9 +139,12 @@ int main(int /*argc*/, char** argv) {
   }
   android::apex::initialize(vold_service);
 
-  bool booting = android::apex::isBooting();
+  bool booting = lifecycle.isBooting();
   if (booting) {
-    android::apex::migrateSessionsDirIfNeeded();
+    if (auto res = android::apex::migrateSessionsDirIfNeeded(); !res.ok()) {
+      LOG(ERROR) << "Failed to migrate sessions to /metadata partition : "
+                 << res.error();
+    }
     android::apex::onStart();
   }
   android::apex::binder::CreateAndRegisterService();
@@ -152,9 +157,8 @@ int main(int /*argc*/, char** argv) {
     // themselves should wait for the ready status instead, which is set when
     // the "--snapshotde" subcommand is received and snapshot/restore is
     // complete.
-    android::apex::onAllPackagesActivated();
-    android::apex::waitForBootStatus(
-        android::apex::revertActiveSessionsAndReboot);
+    android::apex::onAllPackagesActivated(/*is_bootstrap=*/false);
+    lifecycle.waitForBootStatus(android::apex::revertActiveSessionsAndReboot);
   }
 
   android::apex::binder::AllowServiceShutdown();

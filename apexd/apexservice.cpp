@@ -273,15 +273,16 @@ void convertToApexSessionInfo(const ApexSession& session,
 }
 
 static ApexInfo getApexInfo(const ApexFile& package) {
+  auto& instance = ApexPreinstalledData::GetInstance();
   ApexInfo out;
   out.moduleName = package.GetManifest().name();
   out.modulePath = package.GetPath();
   out.versionCode = package.GetManifest().version();
   out.versionName = package.GetManifest().versionname();
-  out.isFactory = package.IsBuiltin();
+  out.isFactory = instance.IsPreInstalledApex(package);
   out.isActive = false;
   Result<std::string> preinstalledPath =
-      getApexPreinstalledPath(package.GetManifest().name());
+      instance.GetPreinstalledPath(package.GetManifest().name());
   if (preinstalledPath.ok()) {
     out.preinstalledModulePath = *preinstalledPath;
   }
@@ -577,7 +578,8 @@ BinderStatus ApexService::recollectPreinstalledData(
       !root.isOk()) {
     return root;
   }
-  if (auto res = ::android::apex::collectPreinstalledData(paths); !res) {
+  ApexPreinstalledData& instance = ApexPreinstalledData::GetInstance();
+  if (auto res = instance.Initialize(paths); !res) {
     return BinderStatus::fromExceptionCode(
         BinderStatus::EX_SERVICE_SPECIFIC,
         String8(res.error().message().c_str()));

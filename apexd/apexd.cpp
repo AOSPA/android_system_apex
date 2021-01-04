@@ -24,9 +24,9 @@
 #include "apex_preinstalled_data.h"
 #include "apex_shim.h"
 #include "apexd_checkpoint.h"
+#include "apexd_lifecycle.h"
 #include "apexd_loop.h"
 #include "apexd_prepostinstall.h"
-#include "apexd_prop.h"
 #include "apexd_rollback_utils.h"
 #include "apexd_session.h"
 #include "apexd_utils.h"
@@ -44,6 +44,7 @@
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
+#include <google/protobuf/util/message_differencer.h>
 #include <libavb/libavb.h>
 #include <libdm/dm.h>
 #include <libdm/dm_table.h>
@@ -90,8 +91,8 @@ using android::dm::DeviceMapper;
 using android::dm::DmDeviceState;
 using android::dm::DmTable;
 using android::dm::DmTargetVerity;
-
 using apex::proto::SessionState;
+using google::protobuf::util::MessageDifferencer;
 
 namespace android {
 namespace apex {
@@ -99,12 +100,6 @@ namespace apex {
 using MountedApexData = MountedApexDatabase::MountedApexData;
 
 namespace {
-
-// These should be in-sync with system/sepolicy/private/property_contexts
-static constexpr const char* kApexStatusSysprop = "apexd.status";
-static constexpr const char* kApexStatusStarting = "starting";
-static constexpr const char* kApexStatusActivated = "activated";
-static constexpr const char* kApexStatusReady = "ready";
 
 static constexpr const char* kBuildFingerprintSysprop = "ro.build.fingerprint";
 
@@ -120,7 +115,6 @@ bool gInFsCheckpointMode = false;
 
 static constexpr size_t kLoopDeviceSetupAttempts = 3u;
 
-bool gBootstrap = false;
 static const std::vector<std::string> kBootstrapApexes = ([]() {
   std::vector<std::string> ret = {
       "com.android.art",
@@ -347,9 +341,16 @@ Result<void> readVerityDevice(const std::string& verity_device,
 
 Result<void> VerifyMountedImage(const ApexFile& apex,
                                 const std::string& mount_point) {
-  auto result = apex.VerifyManifestMatches(mount_point);
-  if (!result.ok()) {
-    return result;
+  // Verify that apex_manifest.pb inside mounted image matches the one in the
+  // outer .apex container.
+  Result<ApexManifest> verified_manifest =
+      ReadManifest(mount_point + "/" + kManifestFilenamePb);
+  if (!verified_manifest.ok()) {
+    return verified_manifest.error();
+  }
+  if (!MessageDifferencer::Equals(*verified_manifest, apex.GetManifest())) {
+    return Errorf(
+        "Manifest inside filesystem does not match manifest outside it");
   }
   if (shim::IsShimApex(apex)) {
     return shim::ValidateShimApex(mount_point, apex);
@@ -361,7 +362,8 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
                                          const std::string& mountPoint,
                                          const std::string& device_name,
                                          const std::string& hashtree_file,
-                                         bool verifyImage) {
+                                         bool verifyImage,
+                                         bool tempMount = false) {
   LOG(VERBOSE) << "Creating mount point: " << mountPoint;
   // Note: the mount point could exist in case when the APEX was activated
   // during the bootstrap phase (e.g., the runtime or tzdata APEX).
@@ -405,7 +407,14 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
   }
   LOG(VERBOSE) << "Loopback device created: " << loopbackDevice.name;
 
-  auto verityData = apex.VerifyApexVerity();
+  auto& instance = ApexPreinstalledData::GetInstance();
+
+  auto public_key = instance.GetPublicKey(apex.GetManifest().name());
+  if (!public_key.ok()) {
+    return public_key.error();
+  }
+
+  auto verityData = apex.VerifyApexVerity(*public_key);
   if (!verityData.ok()) {
     return Error() << "Failed to verify Apex Verity data for " << full_path
                    << ": " << verityData.error();
@@ -413,13 +422,14 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
   std::string blockDevice = loopbackDevice.name;
   MountedApexData apex_data(loopbackDevice.name, apex.GetPath(), mountPoint,
                             /* device_name = */ "",
-                            /* hashtree_loop_name = */ "");
+                            /* hashtree_loop_name = */ "",
+                            /* is_temp_mount */ tempMount);
 
   // for APEXes in immutable partitions, we don't need to mount them on
   // dm-verity because they are already in the dm-verity protected partition;
   // system. However, note that we don't skip verification to ensure that APEXes
   // are correctly signed.
-  const bool mountOnVerity = !isPathForBuiltinApexes(full_path);
+  const bool mountOnVerity = !instance.IsPreInstalledApex(apex);
   DmVerityDevice verityDev;
   loop::LoopbackDeviceUniqueFd loop_for_hash;
   if (mountOnVerity) {
@@ -470,8 +480,8 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
     mountFlags |= MS_NOEXEC;
   }
 
-  if (mount(blockDevice.c_str(), mountPoint.c_str(), "ext4", mountFlags,
-            nullptr) == 0) {
+  if (mount(blockDevice.c_str(), mountPoint.c_str(), apex.GetFsType().c_str(),
+            mountFlags, nullptr) == 0) {
     LOG(INFO) << "Successfully mounted package " << full_path << " on "
               << mountPoint;
     auto status = VerifyMountedImage(apex, mountPoint);
@@ -512,13 +522,16 @@ Result<MountedApexData> VerifyAndTempMountPackage(
       return ErrnoError() << "Failed to unlink " << hashtree_file;
     }
   }
-  auto ret = MountPackageImpl(apex, mount_point, temp_device_name,
-                              hashtree_file, /* verifyImage = */ true);
+  auto ret =
+      MountPackageImpl(apex, mount_point, temp_device_name, hashtree_file,
+                       /* verifyImage = */ true, /* tempMount = */ true);
   if (!ret.ok()) {
     LOG(DEBUG) << "Cleaning up " << hashtree_file;
     if (TEMP_FAILURE_RETRY(unlink(hashtree_file.c_str())) != 0) {
       PLOG(ERROR) << "Failed to unlink " << hashtree_file;
     }
+  } else {
+    gMountedApexes.AddMountedApex(apex.GetManifest().name(), false, *ret);
   }
   return ret;
 }
@@ -561,7 +574,8 @@ Result<void> Unmount(const MountedApexData& data) {
 
 template <typename VerifyFn>
 Result<void> RunVerifyFnInsideTempMount(const ApexFile& apex,
-                                        const VerifyFn& verify_fn) {
+                                        const VerifyFn& verify_fn,
+                                        bool unmount_during_cleanup) {
   // Temp mount image of this apex to validate it was properly signed;
   // this will also read the entire block device through dm-verity, so
   // we can be sure there is no corruption.
@@ -576,11 +590,15 @@ Result<void> RunVerifyFnInsideTempMount(const ApexFile& apex,
     return mount_status.error();
   }
   auto cleaner = [&]() {
-    LOG(DEBUG) << "Unmounting " << temp_mount_point;
-    Result<void> result = Unmount(*mount_status);
-    if (!result.ok()) {
-      LOG(WARNING) << "Failed to unmount " << temp_mount_point << " : "
-                   << result.error();
+    if (unmount_during_cleanup) {
+      LOG(DEBUG) << "Unmounting " << temp_mount_point;
+      Result<void> result = Unmount(*mount_status);
+      if (!result.ok()) {
+        LOG(WARNING) << "Failed to unmount " << temp_mount_point << " : "
+                     << result.error();
+      }
+      gMountedApexes.RemoveMountedApex(apex.GetManifest().name(),
+                                       apex.GetPath(), true);
     }
   };
   auto scope_guard = android::base::make_scope_guard(cleaner);
@@ -590,6 +608,11 @@ Result<void> RunVerifyFnInsideTempMount(const ApexFile& apex,
 template <typename HookFn, typename HookCall>
 Result<void> PrePostinstallPackages(const std::vector<ApexFile>& apexes,
                                     HookFn fn, HookCall call) {
+  auto scope_guard = android::base::make_scope_guard([&]() {
+    for (const ApexFile& apex_file : apexes) {
+      apexd_private::UnmountTempMount(apex_file);
+    }
+  });
   if (apexes.empty()) {
     return Errorf("Empty set of inputs");
   }
@@ -603,9 +626,26 @@ Result<void> PrePostinstallPackages(const std::vector<ApexFile>& apexes,
     }
   }
 
-  // 2) If we found hooks, run the pre/post-install.
+  // 2) If we found hooks, temp mount if required, and run the pre/post-install.
   if (has_hooks) {
-    Result<void> install_status = (*call)(apexes);
+    std::vector<std::string> mount_points;
+    for (const ApexFile& apex : apexes) {
+      // Retrieve the mount data if the apex is already temp mounted, temp
+      // mount it otherwise.
+      std::string mount_point =
+          apexd_private::GetPackageTempMountPoint(apex.GetManifest());
+      Result<MountedApexData> mount_data =
+          apexd_private::getTempMountedApexData(apex.GetManifest().name());
+      if (!mount_data.ok()) {
+        mount_data = VerifyAndTempMountPackage(apex, mount_point);
+        if (!mount_data.ok()) {
+          return mount_data.error();
+        }
+      }
+      mount_points.push_back(mount_point);
+    }
+
+    Result<void> install_status = (*call)(apexes, mount_points);
     if (!install_status.ok()) {
       return install_status;
     }
@@ -653,14 +693,20 @@ Result<void> ValidateStagingShimApex(const ApexFile& to) {
   auto verify_fn = [&](const std::string& system_apex_path) {
     return shim::ValidateUpdate(system_apex_path, to.GetPath());
   };
-  return RunVerifyFnInsideTempMount(*system_shim, verify_fn);
+  return RunVerifyFnInsideTempMount(*system_shim, verify_fn, true);
 }
 
 // A version of apex verification that happens during boot.
 // This function should only verification checks that are necessary to run on
 // each boot. Try to avoid putting expensive checks inside this function.
 Result<void> VerifyPackageBoot(const ApexFile& apex_file) {
-  Result<ApexVerityData> verity_or = apex_file.VerifyApexVerity();
+  // TODO(ioffe): why do we need this here?
+  auto& instance = ApexPreinstalledData::GetInstance();
+  auto public_key = instance.GetPublicKey(apex_file.GetManifest().name());
+  if (!public_key.ok()) {
+    return public_key.error();
+  }
+  Result<ApexVerityData> verity_or = apex_file.VerifyApexVerity(*public_key);
   if (!verity_or.ok()) {
     return verity_or.error();
   }
@@ -686,12 +732,11 @@ Result<void> VerifyPackageInstall(const ApexFile& apex_file) {
   if (!verify_package_boot_status.ok()) {
     return verify_package_boot_status;
   }
-  Result<ApexVerityData> verity_or = apex_file.VerifyApexVerity();
 
   constexpr const auto kSuccessFn = [](const std::string& /*mount_point*/) {
     return Result<void>{};
   };
-  return RunVerifyFnInsideTempMount(apex_file, kSuccessFn);
+  return RunVerifyFnInsideTempMount(apex_file, kSuccessFn, false);
 }
 
 template <typename VerifyApexFn>
@@ -905,15 +950,41 @@ Result<void> MountPackage(const ApexFile& apex, const std::string& mountPoint) {
 
 namespace apexd_private {
 
-Result<MountedApexData> TempMountPackage(const ApexFile& apex,
-                                         const std::string& mount_point) {
-  // TODO(b/139041058): consolidate these two methods.
-  return android::apex::VerifyAndTempMountPackage(apex, mount_point);
+Result<void> UnmountTempMount(const ApexFile& apex) {
+  const ApexManifest& manifest = apex.GetManifest();
+  LOG(VERBOSE) << "Unmounting all temp mounts for package " << manifest.name();
+
+  bool finished_unmounting = false;
+  // If multiple temp mounts exist, ensure that all are unmounted.
+  while (!finished_unmounting) {
+    Result<MountedApexData> data =
+        apexd_private::getTempMountedApexData(manifest.name());
+    if (!data.ok()) {
+      finished_unmounting = true;
+    } else {
+      gMountedApexes.RemoveMountedApex(manifest.name(), data->full_path, true);
+      Unmount(*data);
+    }
+  }
+  return {};
 }
 
-Result<void> Unmount(const MountedApexData& data) {
-  // TODO(b/139041058): consolidate these two methods.
-  return android::apex::Unmount(data);
+Result<MountedApexData> getTempMountedApexData(const std::string& package) {
+  bool found = false;
+  Result<MountedApexData> mount_data;
+  gMountedApexes.ForallMountedApexes(
+      package,
+      [&](const MountedApexData& data, [[maybe_unused]] bool latest) {
+        if (!found) {
+          mount_data = data;
+          found = true;
+        }
+      },
+      true);
+  if (found) {
+    return mount_data;
+  }
+  return Error() << "No temp mount data found for " << package;
 }
 
 bool IsMounted(const std::string& full_path) {
@@ -953,10 +1024,6 @@ Result<void> resumeRevertIfNeeded() {
 
 Result<void> activatePackageImpl(const ApexFile& apex_file) {
   const ApexManifest& manifest = apex_file.GetManifest();
-
-  if (gBootstrap && !isBootstrapApex(apex_file)) {
-    return {};
-  }
 
   // See whether we think it's active, and do not allow to activate the same
   // version. Also detect whether this is the highest version.
@@ -1060,7 +1127,7 @@ std::vector<ApexFile> getActivePackages() {
   return ret;
 }
 
-Result<void> emitApexInfoList() {
+Result<void> emitApexInfoList(bool is_bootstrap) {
   // on a non-updatable device, we don't have APEX database to emit
   if (!android::sysprop::ApexProperties::updatable().value_or(false)) {
     return {};
@@ -1069,7 +1136,10 @@ Result<void> emitApexInfoList() {
   std::vector<com::android::apex::ApexInfo> apexInfos;
 
   auto convertToAutogen = [&apexInfos](const ApexFile& apex, bool isActive) {
-    auto preinstalledPath = getApexPreinstalledPath(apex.GetManifest().name());
+    auto& instance = ApexPreinstalledData::GetInstance();
+
+    auto preinstalledPath =
+        instance.GetPreinstalledPath(apex.GetManifest().name());
     std::optional<std::string> preinstalledModulePath;
     if (preinstalledPath.ok()) {
       preinstalledModulePath = *preinstalledPath;
@@ -1077,7 +1147,7 @@ Result<void> emitApexInfoList() {
     com::android::apex::ApexInfo apexInfo(
         apex.GetManifest().name(), apex.GetPath(), preinstalledModulePath,
         apex.GetManifest().version(), apex.GetManifest().versionname(),
-        apex.IsBuiltin(), isActive);
+        instance.IsPreInstalledApex(apex), isActive);
     apexInfos.emplace_back(apexInfo);
   };
 
@@ -1086,8 +1156,8 @@ Result<void> emitApexInfoList() {
   // we write /apex/.<namespace>-apex-info-list .xml file first and then
   // bind mount it to the canonical file (/apex/apex-info-list.xml).
   const std::string fileName =
-      fmt::format("{}/.{}-{}", kApexRoot, gBootstrap ? "bootstrap" : "default",
-                  kApexInfoList);
+      fmt::format("{}/.{}-{}", kApexRoot,
+                  is_bootstrap ? "bootstrap" : "default", kApexInfoList);
 
   unique_fd fd(TEMP_FAILURE_RETRY(
       open(fileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)));
@@ -1101,7 +1171,7 @@ Result<void> emitApexInfoList() {
   }
   // we skip for non-activated built-in apexes in bootstrap mode
   // in order to avoid boottime increase
-  if (!gBootstrap) {
+  if (!is_bootstrap) {
     for (const auto& apex : getFactoryPackages()) {
       const auto& same_path = [&apex](const auto& o) {
         return o.GetPath() == apex.GetPath();
@@ -1259,7 +1329,8 @@ Result<void> ActivateApexPackages(const std::vector<ApexFile>& apexes) {
 }
 
 bool ShouldActivateApexOnData(const ApexFile& apex) {
-  return HasPreInstalledVersion(apex.GetManifest().name());
+  return ApexPreinstalledData::GetInstance().HasPreInstalledVersion(
+      apex.GetManifest().name());
 }
 
 }  // namespace
@@ -1395,30 +1466,7 @@ Result<void> restoreCeData(const int user_id, const int rollback_id,
 //  Migrates sessions directory from /data/apex/sessions to
 //  /metadata/apex/sessions, if necessary.
 Result<void> migrateSessionsDirIfNeeded() {
-  namespace fs = std::filesystem;
-  auto from_path = std::string(kApexDataDir) + "/sessions";
-  auto exists = PathExists(from_path);
-  if (!exists.ok()) {
-    return Error() << "Failed to access " << from_path << ": "
-                   << exists.error();
-  }
-  if (!*exists) {
-    LOG(DEBUG) << from_path << " does not exist. Nothing to migrate.";
-    return {};
-  }
-  auto to_path = kApexSessionsDir;
-  std::error_code error_code;
-  fs::copy(from_path, to_path, fs::copy_options::recursive, error_code);
-  if (error_code) {
-    return Error() << "Failed to copy old sessions directory"
-                   << error_code.message();
-  }
-  fs::remove_all(from_path, error_code);
-  if (error_code) {
-    return Error() << "Failed to delete old sessions directory "
-                   << error_code.message();
-  }
-  return {};
+  return ApexSession::MigrateToMetadataSessionsDir();
 }
 
 Result<void> destroySnapshots(const std::string& base_dir,
@@ -1536,12 +1584,12 @@ void deleteDePreRestoreSnapshots(const ApexSession& session) {
 }
 
 void onBootCompleted() {
-  markBootCompleted();
+  ApexdLifecycle::getInstance().markBootCompleted();
   bootCompletedCleanup();
 }
 
 void scanStagedSessionsDirAndStage() {
-  LOG(INFO) << "Scanning " << kApexSessionsDir
+  LOG(INFO) << "Scanning " << ApexSession::GetSessionsDir()
             << " looking for sessions to be activated.";
 
   auto sessionsToActivate =
@@ -1775,11 +1823,12 @@ Result<void> unstagePackages(const std::vector<std::string>& paths) {
   LOG(DEBUG) << "unstagePackages() for " << Join(paths, ',');
 
   for (const std::string& path : paths) {
-    if (isPathForBuiltinApexes(path)) {
-      return Error() << "Can't uninstall pre-installed apex " << path;
+    auto apex = ApexFile::Open(path);
+    if (!apex.ok()) {
+      return apex.error();
     }
-    if (access(path.c_str(), F_OK) != 0) {
-      return ErrnoError() << "Can't access " << path;
+    if (ApexPreinstalledData::GetInstance().IsPreInstalledApex(*apex)) {
+      return Error() << "Can't uninstall pre-installed apex " << path;
     }
   }
 
@@ -1875,38 +1924,42 @@ Result<void> revertActiveSessionsAndReboot(
 }
 
 int onBootstrap() {
-  gBootstrap = true;
-
   Result<void> preAllocate = preAllocateLoopDevices();
   if (!preAllocate.ok()) {
     LOG(ERROR) << "Failed to pre-allocate loop devices : "
                << preAllocate.error();
   }
 
-  std::vector<std::string> bootstrap_apex_dirs{
+  ApexPreinstalledData& instance = ApexPreinstalledData::GetInstance();
+  static const std::vector<std::string> kBootstrapApexDirs{
       kApexPackageSystemDir, kApexPackageSystemExtDir, kApexPackageVendorDir};
-  Result<void> status = collectPreinstalledData(bootstrap_apex_dirs);
+  Result<void> status = instance.Initialize(kBootstrapApexDirs);
   if (!status.ok()) {
     LOG(ERROR) << "Failed to collect APEX keys : " << status.error();
     return 1;
   }
 
-  // Activate built-in APEXes for processes launched before /data is mounted.
-  for (const auto& dir : bootstrap_apex_dirs) {
-    auto scan_status = ScanApexFiles(dir.c_str());
-    if (!scan_status.ok()) {
+  // Find all bootstrap apexes
+  std::vector<ApexFile> bootstrap_apexes;
+  for (const auto& dir : kBootstrapApexDirs) {
+    auto scan = ScanApexFiles(dir.c_str());
+    if (!scan.ok()) {
       LOG(ERROR) << "Failed to scan APEX files in " << dir << " : "
-                 << scan_status.error();
+                 << scan.error();
       return 1;
     }
-    if (auto ret = ActivateApexPackages(*scan_status); !ret.ok()) {
-      LOG(ERROR) << "Failed to activate APEX files in " << dir << " : "
-                 << ret.error();
-      return 1;
-    }
+    std::copy_if(std::make_move_iterator(scan->begin()),
+                 std::make_move_iterator(scan->end()),
+                 std::back_inserter(bootstrap_apexes), isBootstrapApex);
   }
 
-  onAllPackagesActivated();
+  // Now activate bootstrap apexes.
+  if (auto ret = ActivateApexPackages(bootstrap_apexes); !ret.ok()) {
+    LOG(ERROR) << "Failed to activate bootstrap apex files : " << ret.error();
+    return 1;
+  }
+
+  onAllPackagesActivated(/*is_bootstrap=*/true);
   LOG(INFO) << "Bootstrapping done";
   return 0;
 }
@@ -1943,7 +1996,8 @@ void initializeVold(CheckpointInterface* checkpoint_service) {
 
 void initialize(CheckpointInterface* checkpoint_service) {
   initializeVold(checkpoint_service);
-  Result<void> status = collectPreinstalledData(kApexPackageBuiltinDirs);
+  ApexPreinstalledData& instance = ApexPreinstalledData::GetInstance();
+  Result<void> status = instance.Initialize(kApexPackageBuiltinDirs);
   if (!status.ok()) {
     LOG(ERROR) << "Failed to collect APEX keys : " << status.error();
     return;
@@ -2034,15 +2088,15 @@ void onStart() {
   snapshotOrRestoreDeSysData();
 }
 
-void onAllPackagesActivated() {
-  auto result = emitApexInfoList();
+void onAllPackagesActivated(bool is_bootstrap) {
+  auto result = emitApexInfoList(is_bootstrap);
   if (!result.ok()) {
     LOG(ERROR) << "cannot emit apex info list: " << result.error();
   }
 
   // Because apexd in bootstrap mode runs in blocking mode
   // we don't have to set as activated.
-  if (gBootstrap) {
+  if (is_bootstrap) {
     return;
   }
 
@@ -2272,11 +2326,6 @@ int unmountAll() {
     }
   });
   return ret;
-}
-
-bool isBooting() {
-  auto status = GetProperty(kApexStatusSysprop, "");
-  return status != kApexStatusReady && status != kApexStatusActivated;
 }
 
 Result<void> remountPackages() {

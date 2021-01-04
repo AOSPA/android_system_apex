@@ -28,10 +28,12 @@ m -j apexer
 export APEXER_TOOL_PATH="${ANDROID_BUILD_TOP}/out/soong/host/linux-x86/bin:${ANDROID_BUILD_TOP}/prebuilts/sdk/tools/linux/bin"
 PATH+=":${ANDROID_BUILD_TOP}/prebuilts/sdk/tools/linux/bin"
 
+for fs_type in ext4 f2fs
+do
 input_dir=$(mktemp -d)
 output_dir=$(mktemp -d)
 
-function finish {
+function cleanup {
   sudo umount /dev/loop10
   sudo losetup --detach /dev/loop10
 
@@ -39,7 +41,7 @@ function finish {
   rm -rf ${output_dir}
 }
 
-trap finish EXIT
+trap cleanup ERR
 #############################################
 # prepare the inputs
 #############################################
@@ -82,6 +84,7 @@ output_file=${output_dir}/test.apex
 ${ANDROID_HOST_OUT}/bin/apexer --verbose --manifest ${manifest_file} \
   --file_contexts ${file_contexts_file} \
   --canned_fs_config ${canned_fs_config_file} \
+  --payload_fs_type ${fs_type} \
   --key ${ANDROID_BUILD_TOP}/system/apex/apexer/testdata/com.android.example.apex.pem \
   --android_jar_path ${ANDROID_BUILD_TOP}/prebuilts/sdk/current/public/android.jar \
   ${input_dir} ${output_file}
@@ -132,4 +135,8 @@ sudo diff ${input_dir}/sub/file3 ${output_dir}/mnt/sub/file3
 # check the android manifest
 aapt dump xmltree ${output_file} AndroidManifest.xml
 
-echo Passed
+echo "Passed for ${fs_type}"
+cleanup
+done
+
+echo "Passed for all fs types"

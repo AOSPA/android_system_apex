@@ -52,5 +52,11 @@ static constexpr const char* kManifestFilenameJson = "apex_manifest.json";
 static constexpr const char* kManifestFilenamePb = "apex_manifest.pb";
 
 static constexpr const char* kApexInfoList = "apex-info-list.xml";
+
+// These should be in-sync with system/sepolicy/private/property_contexts
+static constexpr const char* kApexStatusSysprop = "apexd.status";
+static constexpr const char* kApexStatusStarting = "starting";
+static constexpr const char* kApexStatusActivated = "activated";
+static constexpr const char* kApexStatusReady = "ready";
 }  // namespace apex
 }  // namespace android
