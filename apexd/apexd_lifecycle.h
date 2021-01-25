@@ -33,13 +33,13 @@ class ApexdLifecycle {
   ApexdLifecycle& operator=(ApexdLifecycle&&) = delete;
 
  public:
-  static ApexdLifecycle& getInstance() {
+  static ApexdLifecycle& GetInstance() {
     static ApexdLifecycle instance;
     return instance;
   }
-  bool isBooting();
-  void markBootCompleted();
-  void waitForBootStatus(
+  bool IsBooting();
+  void MarkBootCompleted();
+  void WaitForBootStatus(
       android::base::Result<void> (&rollback_fn)(const std::string&));
 };
 }  // namespace apex

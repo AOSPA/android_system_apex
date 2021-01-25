@@ -40,7 +40,7 @@ static constexpr const char* kCpPath = "/system/bin/cp";
  * path. Note that this will fail if run before APEXes are mounted, due to a
  * dependency on runtime.
  */
-int32_t copy_directory_recursive(const char* from, const char* to) {
+int32_t CopyDirectoryRecursive(const char* from, const char* to) {
   const char* const argv[] = {
       kCpPath,
       "-F", /* delete any existing destination file first
@@ -83,7 +83,7 @@ inline Result<void> ReplaceFiles(const std::string& from_path,
   };
   auto scope_guard = android::base::make_scope_guard(deleter);
 
-  int rc = copy_directory_recursive(from_path.c_str(), to_path.c_str());
+  int rc = CopyDirectoryRecursive(from_path.c_str(), to_path.c_str());
   if (rc != 0) {
     return Error() << "Failed to copy from [" << from_path << "] to ["
                    << to_path << "]";

@@ -155,6 +155,13 @@ apexer_deps_minus_go_tools = apexer_tools + [
 
 apexer_deps_tools = apexer_deps_minus_go_tools + apexer_go_tools
 
+genrule_defaults {
+    name: "apexer_test_host_tools_list",
+    tools: apexer_deps_tools + [
+        "signapk",
+    ],
+}
+
 genrule {
     name: "apexer_test_host_tools",
     srcs: [
@@ -194,9 +201,4 @@ genrule {
         "cp $$LIBCONSCRYPT_OPENJDK_JNI $$LIB && " +
         "$(location soong_zip) -C $$BASE -D $$BASE -o $(out) && " +
         "rm -rf $$BASE",
-    // TODO(b/157110982): cannot specify "required" dependency on go binary
-    host_required: [
-        // TODO(b/160848329): To remove the unnecessary dependence
-        "libconscrypt_openjdk_jni",
-    ],
 }

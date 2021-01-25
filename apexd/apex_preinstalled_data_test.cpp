@@ -41,7 +41,6 @@ namespace fs = std::filesystem;
 using android::apex::testing::IsOk;
 using android::base::GetExecutableDirectory;
 using android::base::StringPrintf;
-using ::testing::HasSubstr;
 
 static std::string GetTestDataDir() { return GetExecutableDirectory(); }
 static std::string GetTestFile(const std::string& name) {
@@ -79,6 +78,12 @@ TEST(ApexPreinstalledDataTest, InitializeSuccess) {
 
   test_fn("apex.apexd_test.apex");
   test_fn("apex.apexd_test_different_app.apex");
+
+  // Check that second call will succeed as well.
+  ASSERT_TRUE(IsOk(instance.Initialize({td.path})));
+
+  test_fn("apex.apexd_test.apex");
+  test_fn("apex.apexd_test_different_app.apex");
 }
 
 TEST(ApexPreinstalledDataTest, InitializeFailureCorruptApex) {
@@ -92,18 +97,52 @@ TEST(ApexPreinstalledDataTest, InitializeFailureCorruptApex) {
   ASSERT_FALSE(IsOk(instance.Initialize({td.path})));
 }
 
-TEST(ApexPreinstalledData, InitializeFailureSameNameDifferentKeys) {
+TEST(ApexPreinstalledData, InitializeSameNameDifferentPathAborts) {
   // Prepare test data.
   TemporaryDir td;
   fs::copy(GetTestFile("apex.apexd_test.apex"), td.path);
-  fs::copy(GetTestFile("apex.apexd_test_different_key.apex"), td.path);
+  fs::copy(GetTestFile("apex.apexd_test.apex"),
+           StringPrintf("%s/other.apex", td.path));
+
+  ASSERT_DEATH(
+      {
+        ApexPreinstalledData instance;
+        instance.Initialize({td.path});
+      },
+      "");
+}
+
+TEST(ApexPreinstalledData, InitializePublicKeyUnexpectdlyChangedAborts) {
+  // Prepare test data.
+  TemporaryDir td;
+  fs::copy(GetTestFile("apex.apexd_test.apex"), td.path);
 
   ApexPreinstalledData instance;
-  auto result = instance.Initialize({td.path});
+  ASSERT_TRUE(IsOk(instance.Initialize({td.path})));
 
-  ASSERT_FALSE(IsOk(result));
-  ASSERT_THAT(result.error().message(),
-              HasSubstr("does not match with previously scanned key"));
+  // Check that apex was loaded.
+  auto path = instance.GetPreinstalledPath("com.android.apex.test_package");
+  ASSERT_TRUE(IsOk(path));
+  ASSERT_EQ(StringPrintf("%s/apex.apexd_test.apex", td.path), *path);
+
+  auto public_key = instance.GetPublicKey("com.android.apex.test_package");
+  ASSERT_TRUE(IsOk(public_key));
+
+  // Substitute it with another apex with the same name, but different public
+  // key.
+  fs::copy(GetTestFile("apex.apexd_test_different_key.apex"), *path,
+           fs::copy_options::overwrite_existing);
+
+  {
+    auto apex = ApexFile::Open(*path);
+    ASSERT_TRUE(IsOk(apex));
+    // Check module name hasn't changed.
+    ASSERT_EQ("com.android.apex.test_package", apex->GetManifest().name());
+    // Check public key has changed.
+    ASSERT_NE(*public_key, apex->GetBundledPublicKey());
+  }
+
+  ASSERT_DEATH({ instance.Initialize({td.path}); }, "");
 }
 
 TEST(ApexPreinstalledData, IsPreInstalledApex) {

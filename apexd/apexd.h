@@ -32,98 +32,99 @@ namespace apex {
 
 class CheckpointInterface;
 
-android::base::Result<void> resumeRevertIfNeeded();
+android::base::Result<void> ResumeRevertIfNeeded();
 
 // Keep it for now to make otapreopt_chroot keep happy.
 // TODO(b/137086602): remove this function.
-android::base::Result<void> scanPackagesDirAndActivate(
+android::base::Result<void> ScanPackagesDirAndActivate(
     const char* apex_package_dir);
-void scanStagedSessionsDirAndStage();
-android::base::Result<void> preinstallPackages(
+void ScanStagedSessionsDirAndStage();
+android::base::Result<void> PreinstallPackages(
     const std::vector<std::string>& paths) WARN_UNUSED;
-android::base::Result<void> postinstallPackages(
+android::base::Result<void> PostinstallPackages(
     const std::vector<std::string>& paths) WARN_UNUSED;
 
-android::base::Result<void> stagePackages(
+android::base::Result<void> StagePackages(
     const std::vector<std::string>& tmpPaths) WARN_UNUSED;
-android::base::Result<void> unstagePackages(
+android::base::Result<void> UnstagePackages(
     const std::vector<std::string>& paths) WARN_UNUSED;
 
-android::base::Result<std::vector<ApexFile>> submitStagedSession(
+android::base::Result<std::vector<ApexFile>> SubmitStagedSession(
     const int session_id, const std::vector<int>& child_session_ids,
     const bool has_rollback_enabled, const bool is_rollback,
     const int rollback_id) WARN_UNUSED;
-android::base::Result<void> markStagedSessionReady(const int session_id)
+android::base::Result<void> MarkStagedSessionReady(const int session_id)
     WARN_UNUSED;
-android::base::Result<void> markStagedSessionSuccessful(const int session_id)
+android::base::Result<void> MarkStagedSessionSuccessful(const int session_id)
     WARN_UNUSED;
-android::base::Result<void> revertActiveSessions(
+android::base::Result<void> RevertActiveSessions(
     const std::string& crashing_native_process);
-android::base::Result<void> revertActiveSessionsAndReboot(
+android::base::Result<void> RevertActiveSessionsAndReboot(
     const std::string& crashing_native_process);
 
-android::base::Result<void> activatePackage(const std::string& full_path)
+android::base::Result<void> ActivatePackage(const std::string& full_path)
     WARN_UNUSED;
-android::base::Result<void> deactivatePackage(const std::string& full_path)
+android::base::Result<void> DeactivatePackage(const std::string& full_path)
     WARN_UNUSED;
 
-std::vector<ApexFile> getActivePackages();
-android::base::Result<ApexFile> getActivePackage(
+std::vector<ApexFile> GetActivePackages();
+android::base::Result<ApexFile> GetActivePackage(
     const std::string& package_name);
 
-std::vector<ApexFile> getFactoryPackages();
+std::vector<ApexFile> GetFactoryPackages();
 
-android::base::Result<void> abortStagedSession(const int session_id);
-android::base::Result<void> abortActiveSession();
+android::base::Result<void> AbortStagedSession(const int session_id);
+android::base::Result<void> AbortActiveSession();
 
-android::base::Result<void> snapshotCeData(const int user_id,
+android::base::Result<void> SnapshotCeData(const int user_id,
                                            const int rollback_id,
                                            const std::string& apex_name);
-android::base::Result<void> restoreCeData(const int user_id,
+android::base::Result<void> RestoreCeData(const int user_id,
                                           const int rollback_id,
                                           const std::string& apex_name);
-android::base::Result<void> destroyDeSnapshots(const int rollback_id);
-android::base::Result<void> destroyCeSnapshots(const int user_id,
+
+android::base::Result<void> DestroyDeSnapshots(const int rollback_id);
+android::base::Result<void> DestroyCeSnapshots(const int user_id,
                                                const int rollback_id);
-android::base::Result<void> destroyCeSnapshotsNotSpecified(
+android::base::Result<void> DestroyCeSnapshotsNotSpecified(
     int user_id, const std::vector<int>& retain_rollback_ids);
 
-int onBootstrap();
+int OnBootstrap();
 // Sets the values of gVoldService and gInFsCheckpointMode.
-void initializeVold(CheckpointInterface* checkpoint_service);
+void InitializeVold(CheckpointInterface* checkpoint_service);
 // Initializes in-memory state (e.g. pre-installed data, activated apexes).
 // Must be called first before calling any other boot sequence related function.
-void initialize(CheckpointInterface* checkpoint_service);
+void Initialize(CheckpointInterface* checkpoint_service);
 // Migrates sessions from /data/apex/session to /metadata/session.i
 // Must only be called during boot (i.e apexd.status is not "ready" or
 // "activated").
-android::base::Result<void> migrateSessionsDirIfNeeded();
+android::base::Result<void> MigrateSessionsDirIfNeeded();
 // Apex activation logic. Scans staged apex sessions and activates apexes.
 // Must only be called during boot (i.e apexd.status is not "ready" or
 // "activated").
-void onStart();
+void OnStart();
 // Notifies system that apexes are activated by setting apexd.status property to
 // "activated".
 // Must only be called during boot (i.e. apexd.status is not "ready" or
 // "activated").
-void onAllPackagesActivated(bool is_bootstrap);
+void OnAllPackagesActivated(bool is_bootstrap);
 // Notifies system that apexes are ready by setting apexd.status property to
 // "ready".
 // Must only be called during boot (i.e. apexd.status is not "ready" or
 // "activated").
-void onAllPackagesReady();
-void onBootCompleted();
-void bootCompletedCleanup();
-int snapshotOrRestoreDeUserData();
+void OnAllPackagesReady();
+void OnBootCompleted();
+void BootCompletedCleanup();
+int SnapshotOrRestoreDeUserData();
 
-int unmountAll();
+int UnmountAll();
 
 android::base::Result<MountedApexDatabase::MountedApexData>
-getTempMountedApexData(const std::string& package);
+GetTempMountedApexData(const std::string& package);
 
 // Optimistically tries to remount as many APEX packages as possible.
 // For more documentation see corresponding binder call in IApexService.aidl.
-android::base::Result<void> remountPackages();
+android::base::Result<void> RemountPackages();
 
 }  // namespace apex
 }  // namespace android

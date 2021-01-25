@@ -71,7 +71,7 @@ TEST(ApexdSessionTest, MigrateToMetadataSessionsDir) {
    public:
     TestApexSession(int id, const SessionState::State& state) {
       path_ = "/data/apex/sessions/" + std::to_string(id);
-      if (auto status = createDirIfNeeded(path_, 0700); !status.ok()) {
+      if (auto status = CreateDirIfNeeded(path_, 0700); !status.ok()) {
         ADD_FAILURE() << "Failed to create " << path_ << " : "
                       << status.error();
       }

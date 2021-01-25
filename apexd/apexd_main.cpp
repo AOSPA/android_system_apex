@@ -32,7 +32,7 @@
 
 namespace {
 android::apex::ApexdLifecycle& lifecycle =
-    android::apex::ApexdLifecycle::getInstance();
+    android::apex::ApexdLifecycle::GetInstance();
 
 int HandleSubcommand(char** argv) {
   if (strcmp("--pre-install", argv[1]) == 0) {
@@ -47,12 +47,12 @@ int HandleSubcommand(char** argv) {
 
   if (strcmp("--bootstrap", argv[1]) == 0) {
     LOG(INFO) << "Bootstrap subcommand detected";
-    return android::apex::onBootstrap();
+    return android::apex::OnBootstrap();
   }
 
   if (strcmp("--unmount-all", argv[1]) == 0) {
     LOG(INFO) << "Unmount all subcommand detected";
-    return android::apex::unmountAll();
+    return android::apex::UnmountAll();
   }
 
   if (strcmp("--snapshotde", argv[1]) == 0) {
@@ -65,16 +65,16 @@ int HandleSubcommand(char** argv) {
       LOG(ERROR) << "Could not retrieve vold service: "
                  << vold_service_st.error();
     } else {
-      android::apex::initializeVold(&*vold_service_st);
+      android::apex::InitializeVold(&*vold_service_st);
     }
 
-    int result = android::apex::snapshotOrRestoreDeUserData();
+    int result = android::apex::SnapshotOrRestoreDeUserData();
 
     if (result == 0) {
       // Notify other components (e.g. init) that all APEXs are ready to be used
       // Note that it's important that the binder service is registered at this
       // point, since other system services might depend on it.
-      android::apex::onAllPackagesReady();
+      android::apex::OnAllPackagesReady();
     }
     return result;
   }
@@ -116,10 +116,10 @@ int main(int /*argc*/, char** argv) {
     LOG(INFO) << "This device does not support updatable APEX. Exiting";
     if (!has_subcommand) {
       // mark apexd as activated so that init can proceed
-      android::apex::onAllPackagesActivated(/*is_bootstrap=*/false);
+      android::apex::OnAllPackagesActivated(/*is_bootstrap=*/false);
     } else if (strcmp("--snapshotde", argv[1]) == 0) {
       // mark apexd as ready
-      android::apex::onAllPackagesReady();
+      android::apex::OnAllPackagesReady();
     }
     return 0;
   }
@@ -137,15 +137,15 @@ int main(int /*argc*/, char** argv) {
   } else {
     vold_service = &*vold_service_st;
   }
-  android::apex::initialize(vold_service);
+  android::apex::Initialize(vold_service);
 
-  bool booting = lifecycle.isBooting();
+  bool booting = lifecycle.IsBooting();
   if (booting) {
-    if (auto res = android::apex::migrateSessionsDirIfNeeded(); !res.ok()) {
+    if (auto res = android::apex::MigrateSessionsDirIfNeeded(); !res.ok()) {
       LOG(ERROR) << "Failed to migrate sessions to /metadata partition : "
                  << res.error();
     }
-    android::apex::onStart();
+    android::apex::OnStart();
   }
   android::apex::binder::CreateAndRegisterService();
   android::apex::binder::StartThreadPool();
@@ -157,8 +157,8 @@ int main(int /*argc*/, char** argv) {
     // themselves should wait for the ready status instead, which is set when
     // the "--snapshotde" subcommand is received and snapshot/restore is
     // complete.
-    android::apex::onAllPackagesActivated(/*is_bootstrap=*/false);
-    lifecycle.waitForBootStatus(android::apex::revertActiveSessionsAndReboot);
+    android::apex::OnAllPackagesActivated(/*is_bootstrap=*/false);
+    lifecycle.WaitForBootStatus(android::apex::RevertActiveSessionsAndReboot);
   }
 
   android::apex::binder::AllowServiceShutdown();

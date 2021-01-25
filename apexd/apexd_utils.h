@@ -18,6 +18,7 @@
 #define ANDROID_APEXD_APEXD_UTILS_H_
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -126,7 +127,7 @@ inline bool IsEmptyDirectory(const std::string& path) {
   return res.ok() && res->empty();
 }
 
-inline Result<void> createDirIfNeeded(const std::string& path, mode_t mode) {
+inline Result<void> CreateDirIfNeeded(const std::string& path, mode_t mode) {
   struct stat stat_data;
 
   if (stat(path.c_str(), &stat_data) != 0) {
@@ -333,6 +334,17 @@ inline Result<void> MoveDir(const std::string& from, const std::string& to) {
     }
   }
   return {};
+}
+
+inline Result<uintmax_t> GetFileSize(const std::string& file_path) {
+  std::error_code ec;
+  auto value = std::filesystem::file_size(file_path, ec);
+  if (ec) {
+    return Error() << "Failed to get file size of " << file_path << " : "
+                   << ec.message();
+  }
+
+  return value;
 }
 
 }  // namespace apex

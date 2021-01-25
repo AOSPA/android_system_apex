@@ -27,9 +27,10 @@
 
 #include "apex_file.h"
 
+using android::base::GetExecutableDirectory;
 using android::base::Result;
 
-static std::string testDataDir = android::base::GetExecutableDirectory() + "/";
+static const std::string kTestDataDir = GetExecutableDirectory() + "/";
 
 namespace android {
 namespace apex {
@@ -48,15 +49,15 @@ class ApexFileTest : public ::testing::TestWithParam<ApexFileTestParam> {};
 INSTANTIATE_TEST_SUITE_P(Apex, ApexFileTest, testing::ValuesIn(kParameters));
 
 TEST_P(ApexFileTest, GetOffsetOfSimplePackage) {
-  const std::string filePath = testDataDir + GetParam().prefix + ".apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_TRUE(apexFile.ok());
+  const std::string file_path = kTestDataDir + GetParam().prefix + ".apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_TRUE(apex_file.ok());
 
   int32_t zip_image_offset;
   size_t zip_image_size;
   {
     ZipArchiveHandle handle;
-    int32_t rc = OpenArchive(filePath.c_str(), &handle);
+    int32_t rc = OpenArchive(file_path.c_str(), &handle);
     ASSERT_EQ(0, rc);
     auto close_guard =
         android::base::make_scope_guard([&handle]() { CloseArchive(handle); });
@@ -71,32 +72,33 @@ TEST_P(ApexFileTest, GetOffsetOfSimplePackage) {
     EXPECT_EQ(zip_image_size, entry.compressed_length);
   }
 
-  EXPECT_EQ(zip_image_offset, apexFile->GetImageOffset());
-  EXPECT_EQ(zip_image_size, apexFile->GetImageSize());
+  EXPECT_EQ(zip_image_offset, apex_file->GetImageOffset());
+  EXPECT_EQ(zip_image_size, apex_file->GetImageSize());
 }
 
 TEST(ApexFileTest, GetOffsetMissingFile) {
-  const std::string filePath = testDataDir + "missing.apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_FALSE(apexFile.ok());
-  ASSERT_THAT(apexFile.error().message(),
+  const std::string file_path = kTestDataDir + "missing.apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_FALSE(apex_file.ok());
+  ASSERT_THAT(apex_file.error().message(),
               testing::HasSubstr("Failed to open package"));
 }
 
 TEST_P(ApexFileTest, GetApexManifest) {
-  const std::string filePath = testDataDir + GetParam().prefix + ".apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_RESULT_OK(apexFile);
-  EXPECT_EQ("com.android.apex.test_package", apexFile->GetManifest().name());
-  EXPECT_EQ(1u, apexFile->GetManifest().version());
+  const std::string file_path = kTestDataDir + GetParam().prefix + ".apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_RESULT_OK(apex_file);
+  EXPECT_EQ("com.android.apex.test_package", apex_file->GetManifest().name());
+  EXPECT_EQ(1u, apex_file->GetManifest().version());
 }
 
 TEST_P(ApexFileTest, VerifyApexVerity) {
-  const std::string filePath = testDataDir + GetParam().prefix + ".apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_RESULT_OK(apexFile);
+  const std::string file_path = kTestDataDir + GetParam().prefix + ".apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_RESULT_OK(apex_file);
 
-  auto verity_or = apexFile->VerifyApexVerity(apexFile->GetBundledPublicKey());
+  auto verity_or =
+      apex_file->VerifyApexVerity(apex_file->GetBundledPublicKey());
   ASSERT_RESULT_OK(verity_or);
 
   const ApexVerityData& data = *verity_or;
@@ -105,60 +107,60 @@ TEST_P(ApexFileTest, VerifyApexVerity) {
                         "50ca7ec8071f49dfa47a243c"),
             data.salt);
 
-  const std::string digestPath =
-      testDataDir + GetParam().prefix + "_digest.txt";
-  std::string rootDigest;
-  ASSERT_TRUE(android::base::ReadFileToString(digestPath, &rootDigest))
-      << "Failed to read " << digestPath;
-  rootDigest = android::base::Trim(rootDigest);
+  const std::string digest_path =
+      kTestDataDir + GetParam().prefix + "_digest.txt";
+  std::string root_digest;
+  ASSERT_TRUE(android::base::ReadFileToString(digest_path, &root_digest))
+      << "Failed to read " << digest_path;
+  root_digest = android::base::Trim(root_digest);
 
-  EXPECT_EQ(std::string(rootDigest), data.root_digest);
+  EXPECT_EQ(std::string(root_digest), data.root_digest);
 }
 
 TEST_P(ApexFileTest, VerifyApexVerityWrongKey) {
-  const std::string filePath = testDataDir + GetParam().prefix + ".apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_RESULT_OK(apexFile);
+  const std::string file_path = kTestDataDir + GetParam().prefix + ".apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_RESULT_OK(apex_file);
 
-  auto verity_or = apexFile->VerifyApexVerity("wrong-key");
+  auto verity_or = apex_file->VerifyApexVerity("wrong-key");
   ASSERT_FALSE(verity_or.ok());
 }
 
 TEST_P(ApexFileTest, GetBundledPublicKey) {
-  const std::string filePath = testDataDir + GetParam().prefix + ".apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_RESULT_OK(apexFile);
+  const std::string file_path = kTestDataDir + GetParam().prefix + ".apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_RESULT_OK(apex_file);
 
-  const std::string keyPath =
-      testDataDir + "apexd_testdata/com.android.apex.test_package.avbpubkey";
-  std::string keyContent;
-  ASSERT_TRUE(android::base::ReadFileToString(keyPath, &keyContent))
-      << "Failed to read " << keyPath;
+  const std::string key_path =
+      kTestDataDir + "apexd_testdata/com.android.apex.test_package.avbpubkey";
+  std::string key_content;
+  ASSERT_TRUE(android::base::ReadFileToString(key_path, &key_content))
+      << "Failed to read " << key_path;
 
-  EXPECT_EQ(keyContent, apexFile->GetBundledPublicKey());
+  EXPECT_EQ(key_content, apex_file->GetBundledPublicKey());
 }
 
 TEST(ApexFileTest, CorrutedApexB146895998) {
-  const std::string apex_path = testDataDir + "corrupted_b146895998.apex";
+  const std::string apex_path = kTestDataDir + "corrupted_b146895998.apex";
   Result<ApexFile> apex = ApexFile::Open(apex_path);
   ASSERT_RESULT_OK(apex);
-  ASSERT_FALSE(apex->VerifyApexVerity("ignored"));
+  ASSERT_FALSE(apex->VerifyApexVerity("ignored").ok());
 }
 
 TEST_P(ApexFileTest, RetrieveFsType) {
-  const std::string filePath = testDataDir + GetParam().prefix + ".apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_TRUE(apexFile.ok());
+  const std::string file_path = kTestDataDir + GetParam().prefix + ".apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_TRUE(apex_file.ok());
 
-  EXPECT_EQ(std::string(GetParam().type), apexFile->GetFsType());
+  EXPECT_EQ(std::string(GetParam().type), apex_file->GetFsType());
 }
 
 TEST(ApexFileTest, OpenInvalidFilesystem) {
-  const std::string filePath =
-      testDataDir + "apex.apexd_test_corrupt_superblock_apex.apex";
-  Result<ApexFile> apexFile = ApexFile::Open(filePath);
-  ASSERT_FALSE(apexFile.ok());
-  ASSERT_THAT(apexFile.error().message(),
+  const std::string file_path =
+      kTestDataDir + "apex.apexd_test_corrupt_superblock_apex.apex";
+  Result<ApexFile> apex_file = ApexFile::Open(file_path);
+  ASSERT_FALSE(apex_file.ok());
+  ASSERT_THAT(apex_file.error().message(),
               testing::HasSubstr("Failed to retrieve filesystem type"));
 }
 

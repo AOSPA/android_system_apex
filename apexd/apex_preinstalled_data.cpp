@@ -21,6 +21,7 @@
 #include <unordered_map>
 
 #include <android-base/file.h>
+#include <android-base/properties.h>
 #include <android-base/result.h>
 #include <android-base/strings.h>
 
@@ -29,6 +30,7 @@
 #include "apexd_utils.h"
 
 using android::base::Error;
+using android::base::GetProperty;
 using android::base::Result;
 
 namespace android {
@@ -60,10 +62,21 @@ Result<void> ApexPreinstalledData::ScanDir(const std::string& dir) {
     auto it = data_.find(name);
     if (it == data_.end()) {
       data_[name] = apex_data;
+    } else if (it->second.path != apex_data.path) {
+      // Currently, on some -eng builds there are two art apexes on /system
+      // partition. While this issue is not fixed, exempt art apex from the
+      // duplicate check on -eng builds.
+      // TODO(b/176497601): remove this exemption once issue with duplicate art
+      // apex is resolved.
+      std::string build_type = GetProperty("ro.build.type", "");
+      auto level = build_type == "eng" && name == "com.android.art"
+                       ? base::ERROR
+                       : base::FATAL;
+      LOG(level) << "Found two apex packages " << it->second.path << " and "
+                 << apex_data.path << " with the same module name " << name;
     } else if (it->second.public_key != apex_data.public_key) {
-      return Error() << "Key for package " << apex_data.path << " ( " << name
-                     << ") does not match with previously scanned key from "
-                     << it->second.path;
+      LOG(FATAL) << "Public key of apex package " << it->second.path << " ("
+                 << name << ") has unexpectedly changed";
     }
   }
   return {};
