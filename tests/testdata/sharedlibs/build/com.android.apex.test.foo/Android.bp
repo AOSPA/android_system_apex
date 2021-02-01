@@ -29,6 +29,9 @@ apex {
     key: "com.android.apex.test.foo.key",
     installable: false,
     binaries: [ "foo_test" ],
+    dist: {
+        targets: ["sharedlibs_test"],
+    },
 }
 
 cc_binary {
@@ -44,7 +47,7 @@ genrule {
     name: "com.android.apex.test.foo_stripped",
     out: ["com.android.apex.test.foo_stripped.apex"],
     dist: {
-        targets: ["sharedlibs_test_genfile"],
+        targets: ["sharedlibs_test"],
     },
     srcs: [
         ":com.android.apex.test.foo",

@@ -26,7 +26,6 @@ import android.cts.install.lib.host.InstallUtilsHost;
 import com.android.apex.ApexInfo;
 import com.android.apex.XmlParser;
 import com.android.tests.rollback.host.AbandonSessionsRule;
-import com.android.tests.util.ModuleTestUtils;
 import com.android.tradefed.device.ITestDevice;
 import com.android.tradefed.testtype.DeviceJUnit4ClassRunner;
 import com.android.tradefed.testtype.junit4.BaseHostJUnit4Test;
@@ -52,7 +51,6 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
 
     private static final String SHIM_APEX_PATH = "/system/apex/com.android.apex.cts.shim.apex";
 
-    private final ModuleTestUtils mTestUtils = new ModuleTestUtils(this);
     private final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
 
     @Rule
@@ -82,7 +80,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
         try {
-            assertThat(getDevice().pushFile(mTestUtils.getTestFile("apex.apexd_test_v2.apex"),
+            assertThat(getDevice().pushFile(mHostUtils.getTestFile("apex.apexd_test_v2.apex"),
                     "/data/apex/active/apexd_test_v2.apex")).isTrue();
             getDevice().reboot();
             assertWithMessage("Timed out waiting for device to boot").that(
@@ -91,7 +89,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
             ITestDevice.ApexInfo testApex = new ITestDevice.ApexInfo(
                     "com.android.apex.test_package", 2L);
             assertThat(activeApexes).doesNotContain(testApex);
-            mTestUtils.waitForFileDeleted("/data/apex/active/apexd_test_v2.apex",
+            mHostUtils.waitForFileDeleted("/data/apex/active/apexd_test_v2.apex",
                     Duration.ofMinutes(3));
         } finally {
             getDevice().executeShellV2Command("rm /data/apex/active/apexd_test_v2.apex");
@@ -103,7 +101,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
         assumeTrue("Device requires root", getDevice().isAdbRoot());
         final String testApexFile = "com.android.apex.cts.shim.v2_no_pb.apex";
         try {
-            assertThat(getDevice().pushFile(mTestUtils.getTestFile(testApexFile),
+            assertThat(getDevice().pushFile(mHostUtils.getTestFile(testApexFile),
                     "/data/apex/active/" + testApexFile)).isTrue();
             getDevice().reboot();
             assertWithMessage("Timed out waiting for device to boot").that(
@@ -112,7 +110,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
             ITestDevice.ApexInfo testApex = new ITestDevice.ApexInfo(
                     "com.android.apex.cts.shim", 2L);
             assertThat(activeApexes).doesNotContain(testApex);
-            mTestUtils.waitForFileDeleted("/data/apex/active/" + testApexFile,
+            mHostUtils.waitForFileDeleted("/data/apex/active/" + testApexFile,
                     Duration.ofMinutes(3));
         } finally {
             getDevice().executeShellV2Command("rm /data/apex/active/" + testApexFile);
@@ -128,7 +126,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
             getDevice().remountSystemWritable();
             // In case remount requires a reboot, wait for boot to complete.
             getDevice().waitForBootComplete(Duration.ofMinutes(3).toMillis());
-            final File newFile = mTestUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+            final File newFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
             // Stop framework
             getDevice().executeShellV2Command("stop");
             // Push new shim APEX. This simulates adb sync.
@@ -161,10 +159,10 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
             assertWithMessage("Timed out waiting for device to boot").that(
                     getDevice().waitForBootComplete(Duration.ofMinutes(2).toMillis())).isTrue();
 
-            final File v1 = mTestUtils.getTestFile("apex.apexd_test.apex");
+            final File v1 = mHostUtils.getTestFile("apex.apexd_test.apex");
             getDevice().pushFile(v1, "/product/apex/apex.apexd_test.apex");
 
-            final File v2_no_pb = mTestUtils.getTestFile("apex.apexd_test_v2_no_pb.apex");
+            final File v2_no_pb = mHostUtils.getTestFile("apex.apexd_test_v2_no_pb.apex");
             getDevice().pushFile(v2_no_pb, "/data/apex/active/apex.apexd_test_v2_no_pb.apex");
 
             getDevice().reboot();
@@ -178,7 +176,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
                     "com.android.apex.test_package", 2L));
 
             // v2_no_pb should be deleted
-            mTestUtils.waitForFileDeleted("/data/apex/active/apex.apexd_test_v2_no_pb.apex",
+            mHostUtils.waitForFileDeleted("/data/apex/active/apex.apexd_test_v2_no_pb.apex",
                     Duration.ofMinutes(3));
         } finally {
             getDevice().remountSystemWritable();
@@ -202,10 +200,10 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
             assertWithMessage("Timed out waiting for device to boot").that(
                     getDevice().waitForBootComplete(Duration.ofMinutes(2).toMillis())).isTrue();
 
-            final File v3 = mTestUtils.getTestFile("apex.apexd_test_v3.apex");
+            final File v3 = mHostUtils.getTestFile("apex.apexd_test_v3.apex");
             getDevice().pushFile(v3, "/product/apex/apex.apexd_test_v3.apex");
 
-            final File v2_no_pb = mTestUtils.getTestFile("apex.apexd_test_v2_no_pb.apex");
+            final File v2_no_pb = mHostUtils.getTestFile("apex.apexd_test_v2_no_pb.apex");
             getDevice().pushFile(v2_no_pb, "/data/apex/active/apex.apexd_test_v2_no_pb.apex");
 
             getDevice().reboot();
@@ -219,7 +217,7 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
                     "com.android.apex.test_package", 2L));
 
             // v2_no_pb should be deleted
-            mTestUtils.waitForFileDeleted("/data/apex/active/apex.apexd_test_v2_no_pb.apex",
+            mHostUtils.waitForFileDeleted("/data/apex/active/apex.apexd_test_v2_no_pb.apex",
                     Duration.ofMinutes(3));
         } finally {
             getDevice().remountSystemWritable();
@@ -266,8 +264,8 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
-        File apexFile = mTestUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
-        String error = mTestUtils.installStagedPackage(apexFile);
+        File apexFile = mHostUtils.getTestFile("com.android.apex.cts.shim.v2.apex");
+        String error = mHostUtils.installStagedPackage(apexFile);
         assertThat(error).isNull();
         String sessionId = getDevice().executeShellCommand(
                 "pm get-stagedsessions --only-ready --only-parent --only-sessionid").trim();

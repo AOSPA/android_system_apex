@@ -233,3 +233,14 @@ prebuilt_apex {
   filename: "corrupted_b146895998.apex",
   installable: false,
 }
+
+// APEX for banned name test cannot be generated at build time.
+// This file can be generated manually by creating new apex target
+// with manifest name 'sharedlibs', and modify aapt2 to skip validating
+// package name from aapt::util::IsAndroidPackageName().
+prebuilt_apex {
+    name: "apex.banned_name",
+    src: "sharedlibs.apex",
+    filename: "sharedlibs.apex",
+    installable: false,
+}

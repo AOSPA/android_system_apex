@@ -174,7 +174,8 @@ Result<void> configureLoopDevice(const int device_fd, const std::string& target,
     // let's give another try with buffered I/O for EROFS and squashfs
     if (statfs(target.c_str(), &stbuf) != 0 ||
         (stbuf.f_type != EROFS_SUPER_MAGIC_V1 &&
-         stbuf.f_type != SQUASHFS_MAGIC)) {
+         stbuf.f_type != SQUASHFS_MAGIC &&
+         stbuf.f_type != OVERLAYFS_SUPER_MAGIC)) {
       return Error(saved_errno) << "Failed to open " << target;
     }
     LOG(WARNING) << "Fallback to buffered I/O for " << target;

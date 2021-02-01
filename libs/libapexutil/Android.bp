@@ -30,6 +30,10 @@ cc_library_static {
   export_include_dirs: ["."],
   srcs: ["apexutil.cpp"],
   host_supported: true,
+  apex_available: [
+      "//apex_available:platform",
+      "com.android.runtime",
+  ],
 }
 
 cc_test {

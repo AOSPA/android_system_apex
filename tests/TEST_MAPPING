@@ -13,6 +13,11 @@
       "name": "timezone_data_e2e_tests"
     }
   ],
+  "presubmit-large": [
+    {
+      "name": "sharedlibs_host_tests"
+    }
+  ],
   "postsubmit": [
     // The following changes are in post-submit to restrict to physical
     // devices (currently failing on cf). TODO: Fix and move to presubmit.

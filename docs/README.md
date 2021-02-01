@@ -1,14 +1,18 @@
 # APEX File Format
 
-Android Pony EXpress (APEX) is a container format introduced in Android Q
-that is used in the install flow for lower-level system
-modules. This format facilitates the updates of system components that don't fit
-into the standard Android application model. Some example components are native
-services and libraries, hardware abstraction layers
+Android Pony EXpress (APEX) is a container format introduced in Android Q that
+is used in the install flow for lower-level system modules. This format
+facilitates the updates of system components that don't fit into the standard
+Android application model. Some example components are native services and
+libraries, hardware abstraction layers
 ([HALs](/https://source.android.com/devices/architecture/hal-types)), runtime
 ([ART](/https://source.android.com/devices/tech/dalvik)), and class libraries.
 
 The term "APEX" can also refer to an APEX file.
+
+This document describes technical details of the APEX file format. If you are
+looking at how to build an APEX package, kindly refer to [this how-to](howto.md)
+document.
 
 ## Background
 
@@ -55,8 +59,8 @@ infrastructure such as ADB, PackageManager, and package installer apps (such as
 Play Store). For example, the APEX file can use an existing tool such as `aapt`
 to inspect basic metadata from the file. The file contains package name and
 version information. This information is generally also available in
-`apex_manifest.json`. `AndroidManifest.xml` might contain additional
-targeting information that can be used by the existing app publishing tools.
+`apex_manifest.json`. `AndroidManifest.xml` might contain additional targeting
+information that can be used by the existing app publishing tools.
 
 `apex_manifest.json` is recommended over `AndroidManifest.xml` for new code and
 systems that deal with APEX.
@@ -68,16 +72,16 @@ metadata block are created using libavb. The file system payload isn't parsed
 inside the `apex_payload.img` file.
 
 `apex_pubkey` is the public key used to sign the file system image. At runtime,
-this key ensures that the downloaded APEX is signed with the same entity
-that signs the same APEX in the built-in partitions.
+this key ensures that the downloaded APEX is signed with the same entity that
+signs the same APEX in the built-in partitions.
 
 ### APEX manager
 
-The APEX manager (or `apexd`) is a native daemon responsible for
-verifying, installing, and uninstalling APEX files. This process is launched and
-is ready early in the boot sequence. APEX files are normally pre-installed on
-the device under `/system/apex`. The APEX manager defaults to using these
-packages if no updates are available.
+The APEX manager (or `apexd`) is a native daemon responsible for verifying,
+installing, and uninstalling APEX files. This process is launched and is ready
+early in the boot sequence. APEX files are normally pre-installed on the device
+under `/system/apex`. The APEX manager defaults to using these packages if no
+updates are available.
 
 The update sequence of an APEX uses the
 [PackageManager class](https://developer.android.com/reference/android/content/pm/PackageManager)
@@ -132,17 +136,17 @@ The APEX format supports these file types:
 -   Data files
 -   Config files
 
-The APEX format can only update some of these file types. Whether a file
-type can be updated depends on the platform and how stable the interfaces for
-the files types are defined.
+The APEX format can only update some of these file types. Whether a file type
+can be updated depends on the platform and how stable the interfaces for the
+files types are defined.
 
 ### Signing
 
 APEX files are signed in two ways. First, the `apex_payload.img` (specifically,
 the vbmeta descriptor appended to `apex_payload.img`) file is signed with a key.
 Then, the entire APEX is signed using the
-[APK signature scheme v3](/https://source.android.com/security/apksigning/v3). Two different keys are used
-in this process.
+[APK signature scheme v3](/https://source.android.com/security/apksigning/v3).
+Two different keys are used in this process.
 
 On the device side, a public key corresponding to the private key used to sign
 the vbmeta descriptor is installed. The APEX manager uses the public key to
@@ -152,9 +156,8 @@ different keys and is enforced both at build time and runtime.
 ### APEX in built-in partitions
 
 APEX files can be located in built-in partitions such as `/system`. The
-partition is
-already over dm-verity, so the APEX files are mounted directly over the loop
-device.
+partition is already over dm-verity, so the APEX files are mounted directly over
+the loop device.
 
 If an APEX is present in a built-in partition, the APEX can be updated by
 providing an APEX package with the same package name and a higher version code.
@@ -165,18 +168,18 @@ the newer version of the APEX is only activated after reboot.
 ## Kernel requirements
 
 To support APEX mainline modules on an Android device, the following Linux
-kernel features are required: the loop driver and dm-verity. The loop
-driver mounts the file system image in an APEX module and dm-verity verifies the
-APEX module.
+kernel features are required: the loop driver and dm-verity. The loop driver
+mounts the file system image in an APEX module and dm-verity verifies the APEX
+module.
 
-The performance of the loop driver and dm-verity is important in achieving
-good system performance when using APEX modules.
+The performance of the loop driver and dm-verity is important in achieving good
+system performance when using APEX modules.
 
 ### Supported kernel versions
 
 APEX mainline modules are supported on devices using kernel versions 4.4 or
-higher. New devices launching with Android Q or higher
-must use kernel version 4.9 or higher to support APEX modules.
+higher. New devices launching with Android Q or higher must use kernel version
+4.9 or higher to support APEX modules.
 
 ### Required kernel patches
 
@@ -187,10 +190,9 @@ of the Android common tree.
 #### Kernel version 4.4
 
 This version is only supported for devices that are upgraded from Android 9 to
-Android Q and want to support APEX modules. To get the
-required patches, a down-merge from the `android-4.4` branch is strongly
-recommended. The following is a list of the required individual patches
-for kernel version 4.4.
+Android Q and want to support APEX modules. To get the required patches, a
+down-merge from the `android-4.4` branch is strongly recommended. The following
+is a list of the required individual patches for kernel version 4.4.
 
 -   UPSTREAM: loop: add ioctl for changing logical block size
     ([4.4](https://android-review.googlesource.com/c/kernel/common/+/777013){: .external})
@@ -216,9 +218,9 @@ the `android-common` branch.
 
 ### Required kernel configuration options
 
-The following list shows the base configuration requirements for supporting
-APEX modules that were introduced in Android Q. The
-items with an asterisk (\*) are existing requirements from Android 9 and lower.
+The following list shows the base configuration requirements for supporting APEX
+modules that were introduced in Android Q. The items with an asterisk (\*) are
+existing requirements from Android 9 and lower.
 
 ```
 (*) CONFIG_AIO=Y # AIO support (for direct I/O on loop devices)
@@ -242,8 +244,8 @@ requirements.
 Note: Because the implementation details for APEX are still under development,
 the content in this section is subject to change.
 
-This section describes how to build an APEX using the Android build system.
-The following is an example of `Android.bp` for an APEX named `apex.test`.
+This section describes how to build an APEX using the Android build system. The
+following is an example of `Android.bp` for an APEX named `apex.test`.
 
 ```
 apex {
@@ -280,12 +282,12 @@ apex {
 
 #### File types and locations in APEX
 
-|File type          |Location in APEX                                              |
-|-------------------|--------------------------------------------------------------|
-|Shared libraries   |`/lib` and `/lib64` (`/lib/arm` for translated arm in x86)    |
-|Executables        |`/bin`                                                        |
-|Java libraries     |`/javalib`                                                    |
-|Prebuilts          |`/etc`                                                        |
+File type        | Location in APEX
+---------------- | ----------------------------------------------------------
+Shared libraries | `/lib` and `/lib64` (`/lib/arm` for translated arm in x86)
+Executables      | `/bin`
+Java libraries   | `/javalib`
+Prebuilts        | `/etc`
 
 ### Transitive dependencies
 
@@ -376,6 +378,7 @@ $ avbtool extract_public_key --key foo.pem --output foo.avbpubkey
 ```
 
 In Android.bp:
+
 ```
 apex_key {
     name: "apex.test.key",
@@ -507,21 +510,21 @@ kernel to fully support APEX. For example, the kernel might have been built
 without `CONFIG_BLK_DEV_LOOP=Y`, which is crucial for mounting the file system
 image inside an APEX.
 
-Flattened APEX is a specially built APEX that can be activated on devices with
-a legacy kernel. Files in a flattened APEX are directly installed to a directory
+Flattened APEX is a specially built APEX that can be activated on devices with a
+legacy kernel. Files in a flattened APEX are directly installed to a directory
 under the built-in partition. For example, `lib/libFoo.so` in a flattend APEX
 `my.apex` is installed to `/system/apex/my.apex/lib/libFoo.so`.
 
 Activating a flattened APEX doesn't involve the loop device. The entire
 directory `/system/apex/my.apex` is directly bind-mounted to `/apex/name@ver`.
 
-Flattened APEXs can't be updated by downloading updated versions
-of the APEXs from network because the downloaded APEXs can't be flattened.
-Flattened APEXs can be updated only via a regular OTA.
+Flattened APEXs can't be updated by downloading updated versions of the APEXs
+from network because the downloaded APEXs can't be flattened. Flattened APEXs
+can be updated only via a regular OTA.
 
 Note that flattened APEX is the default configuration for now. This means all
-APEXes are by default flattened unless you explicitly configure your device
-to support updatable APEX (explained above).
+APEXes are by default flattened unless you explicitly configure your device to
+support updatable APEX (explained above).
 
 Also note that, mixing flattened and non-flattened APEXes in a device is NOT
 supported. It should be either all non-flattened or all flattened. This is
@@ -532,20 +535,19 @@ device should inherit from `updatable_apex.mk` as explained above.
 
 ## Alternatives considered when developing APEX
 
-Here are some options that we considered when designing the APEX file
-format, and why we included or excluded them.
+Here are some options that we considered when designing the APEX file format,
+and why we included or excluded them.
 
 ### Regular package management systems
 
-Linux distributions have package management systems like `dpkg` and `rpm`,
-which are powerful, mature and robust. However, they weren't
-adopted for APEX because they can't protect the packages after
-installation. Verification is done only when packages are being installed.
-Attackers can break the integrity of the installed packages unnoticed. This is
-a regression for Android where all system components were stored in read-only
-file systems whose integrity is protected by dm-verity for every I/O. Any
-tampering to system components must be prohibited, or be detectable so that
-the device can refuse to boot if compromised.
+Linux distributions have package management systems like `dpkg` and `rpm`, which
+are powerful, mature and robust. However, they weren't adopted for APEX because
+they can't protect the packages after installation. Verification is done only
+when packages are being installed. Attackers can break the integrity of the
+installed packages unnoticed. This is a regression for Android where all system
+components were stored in read-only file systems whose integrity is protected by
+dm-verity for every I/O. Any tampering to system components must be prohibited,
+or be detectable so that the device can refuse to boot if compromised.
 
 ### dm-crypt for integrity
 
@@ -573,15 +575,15 @@ partition, they were accessible via paths such as `/system/lib/libfoo.so`. A
 client of an APEX file (other APEX files or the platform) should use the new
 paths. This change in paths might require updates to the existing code.
 
-One way to avoid the path change is to overlay the file contents in an APEX
-file over the `/system` partition. However, we decided not to overlay files over
-the `/system` partition because we believed this would negatively affect
-performance as the number of files being overlayed (possibly even stacked one
-after another) increases.
+One way to avoid the path change is to overlay the file contents in an APEX file
+over the `/system` partition. However, we decided not to overlay files over the
+`/system` partition because we believed this would negatively affect performance
+as the number of files being overlayed (possibly even stacked one after another)
+increases.
 
 Another option was to hijack file access functions such as `open`, `stat`, and
 `readlink`, so that paths that start with `/system` are redirected to their
 corresponding paths under `/apex`. We discarded this option because it's
-practically infeasible to change all functions that accept paths. For
-example, some apps statically link Bionic, which implements the functions. In
-that case, the redirection won't happen for the app.
+practically infeasible to change all functions that accept paths. For example,
+some apps statically link Bionic, which implements the functions. In that case,
+the redirection won't happen for the app.

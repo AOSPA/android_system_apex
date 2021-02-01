@@ -59,5 +59,10 @@ message ApexManifest {
   // List of libs required that are located in a shared libraries APEX.
   // Format of the content is 'library:hash'.
   // Example) libc++.so:83d8f50...
-  repeated string sharedApexLibs = 10;
+  repeated string requireSharedApexLibs = 10;
+
+  // Whether this APEX provides libraries to be shared with other APEXs. This
+  // causes libraries contained in the APEX to be made available under
+  // /apex/sharedlibs .
+  bool provideSharedApexLibs = 11;
 }

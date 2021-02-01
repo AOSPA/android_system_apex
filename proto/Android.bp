@@ -33,6 +33,10 @@ cc_library_static {
         type: "lite",
     },
     srcs: ["apex_manifest.proto"],
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.runtime",
+    ],
 }
 
 python_library_host {
