@@ -47,6 +47,7 @@ namespace apex {
 namespace {
 
 constexpr const char* kImageFilename = "apex_payload.img";
+constexpr const char* kCompressedApexFilename = "original_apex";
 constexpr const char* kBundledPublicKeyFilename = "apex_pubkey";
 
 struct FsMagic {
@@ -74,10 +75,12 @@ Result<std::string> RetrieveFsType(borrowed_fd fd, int32_t image_offset) {
 }  // namespace
 
 Result<ApexFile> ApexFile::Open(const std::string& path) {
-  int32_t image_offset;
-  size_t image_size;
+  std::optional<int32_t> image_offset;
+  std::optional<size_t> image_size;
   std::string manifest_content;
   std::string pubkey;
+  std::optional<std::string> fs_type;
+  ZipEntry entry;
 
   unique_fd fd(open(path.c_str(), O_RDONLY | O_BINARY | O_CLOEXEC));
   if (fd < 0) {
@@ -94,20 +97,30 @@ Result<ApexFile> ApexFile::Open(const std::string& path) {
                    << ErrorCodeString(ret);
   }
 
-  // Locate the mountable image within the zipfile and store offset and size.
-  ZipEntry entry;
-  ret = FindEntry(handle, kImageFilename, &entry);
+  bool is_compressed = true;
+  ret = FindEntry(handle, kCompressedApexFilename, &entry);
   if (ret < 0) {
-    return Error() << "Could not find entry \"" << kImageFilename
-                   << "\" in package " << path << ": " << ErrorCodeString(ret);
+    is_compressed = false;
   }
-  image_offset = entry.offset;
-  image_size = entry.uncompressed_length;
 
-  auto fs_type = RetrieveFsType(fd, image_offset);
-  if (!fs_type.ok()) {
-    return Error() << "Failed to retrieve filesystem type for " << path << ": "
-                   << fs_type.error();
+  if (!is_compressed) {
+    // Locate the mountable image within the zipfile and store offset and size.
+    ret = FindEntry(handle, kImageFilename, &entry);
+    if (ret < 0) {
+      return Error() << "Could not find entry \"" << kImageFilename
+                     << "\" or \"" << kCompressedApexFilename
+                     << "\" in package " << path << ": "
+                     << ErrorCodeString(ret);
+    }
+    image_offset = entry.offset;
+    image_size = entry.uncompressed_length;
+
+    auto fs_type_result = RetrieveFsType(fd, image_offset.value());
+    if (!fs_type_result.ok()) {
+      return Error() << "Failed to retrieve filesystem type for " << path
+                     << ": " << fs_type_result.error();
+    }
+    fs_type = std::move(*fs_type_result);
   }
 
   ret = FindEntry(handle, kManifestFilenamePb, &entry);
@@ -144,7 +157,7 @@ Result<ApexFile> ApexFile::Open(const std::string& path) {
   }
 
   return ApexFile(path, image_offset, image_size, std::move(*manifest), pubkey,
-                  *fs_type);
+                  fs_type, is_compressed);
 }
 
 // AVB-related code.
@@ -184,7 +197,11 @@ Result<std::unique_ptr<AvbFooter>> GetAvbFooter(const ApexFile& apex,
   auto footer = std::make_unique<AvbFooter>();
 
   // The AVB footer is located in the last part of the image
-  off_t offset = apex.GetImageSize() + apex.GetImageOffset() - AVB_FOOTER_SIZE;
+  if (!apex.GetImageOffset() || !apex.GetImageSize()) {
+    return Error() << "Cannot check avb footer without image offset and size";
+  }
+  off_t offset = apex.GetImageSize().value() + apex.GetImageOffset().value() -
+                 AVB_FOOTER_SIZE;
   int ret = lseek(fd, offset, SEEK_SET);
   if (ret == -1) {
     return ErrnoError() << "Couldn't seek to AVB footer";
@@ -248,7 +265,11 @@ Result<std::unique_ptr<uint8_t[]>> VerifyVbMeta(const ApexFile& apex,
     return Errorf("VbMeta size in footer exceeds kVbMetaMaxSize.");
   }
 
-  off_t offset = apex.GetImageOffset() + footer.vbmeta_offset;
+  if (!apex.GetImageOffset()) {
+    return Error() << "Cannot check VbMeta size without image offset";
+  }
+
+  off_t offset = apex.GetImageOffset().value() + footer.vbmeta_offset;
   std::unique_ptr<uint8_t[]> vbmeta_buf(new uint8_t[footer.vbmeta_size]);
 
   if (!ReadFullyAtOffset(fd, vbmeta_buf.get(), footer.vbmeta_size, offset)) {
@@ -319,6 +340,10 @@ Result<std::unique_ptr<AvbHashtreeDescriptor>> VerifyDescriptor(
 
 Result<ApexVerityData> ApexFile::VerifyApexVerity(
     const std::string& public_key) const {
+  if (IsCompressed()) {
+    return Error() << "Cannot verify ApexVerity of compressed APEX";
+  }
+
   ApexVerityData verity_data;
 
   unique_fd fd(open(GetPath().c_str(), O_RDONLY | O_CLOEXEC));
@@ -359,6 +384,56 @@ Result<ApexVerityData> ApexFile::VerifyApexVerity(
   verity_data.root_digest = GetDigest(*verity_data.desc, trailing_data);
 
   return verity_data;
+}
+
+Result<void> ApexFile::Decompress(const std::string& dest_path) const {
+  const std::string& src_path = GetPath();
+
+  // We should decompress compressed APEX files only
+  if (!IsCompressed()) {
+    return ErrnoError() << "Cannot decompress an uncompressed APEX";
+  }
+
+  // Get file descriptor of the compressed apex file
+  unique_fd src_fd(open(src_path.c_str(), O_RDONLY | O_CLOEXEC));
+  if (src_fd.get() == -1) {
+    return ErrnoError() << "Failed to open compressed APEX " << GetPath();
+  }
+
+  // Open it as a zip file
+  ZipArchiveHandle handle;
+  int ret = OpenArchiveFd(src_fd.get(), src_path.c_str(), &handle, false);
+  if (ret < 0) {
+    return Error() << "Failed to open package " << src_path << ": "
+                   << ErrorCodeString(ret);
+  }
+  auto handle_guard =
+      android::base::make_scope_guard([&handle] { CloseArchive(handle); });
+
+  // Find the original apex file inside the zip and extract to dest
+  ZipEntry entry;
+  ret = FindEntry(handle, kCompressedApexFilename, &entry);
+  if (ret < 0) {
+    return Error() << "Could not find entry \"" << kCompressedApexFilename
+                   << "\" in package " << src_path << ": "
+                   << ErrorCodeString(ret);
+  }
+
+  // Open destination file descriptor
+  unique_fd dest_fd(
+      open(dest_path.c_str(), O_WRONLY | O_CLOEXEC | O_CREAT, 0644));
+  if (dest_fd.get() == -1) {
+    return ErrnoError() << "Failed to open decompression destination "
+                        << GetPath();
+  }
+  ret = ExtractEntryToFile(handle, &entry, dest_fd.get());
+  if (ret < 0) {
+    return Error() << "Could not decompress to file " << dest_path
+                   << ErrorCodeString(ret);
+  }
+
+  LOG(VERBOSE) << "Decompressed " << src_path << " to " << dest_path;
+  return {};
 }
 
 }  // namespace apex

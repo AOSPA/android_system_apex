@@ -123,7 +123,7 @@ prebuilt_etc {
 
 java_test_host {
     name: "apex_rollback_tests",
-    srcs:  ["src/**/ApexRollbackTests.java", "src/**/ApexTestUtils.java"],
+    srcs:  ["src/**/ApexRollbackTests.java"],
     libs: ["tradefed", "truth-prebuilt"],
     static_libs: ["frameworks-base-hostutils", "cts-install-lib-host"],
     test_config: "apex-rollback-tests.xml",
@@ -191,5 +191,26 @@ java_test_host {
         "truth-prebuilt"
     ],
     test_config: "shared-libs-apex-tests.xml",
+    test_suites: ["general-tests"],
+}
+
+java_test_host {
+    name: "apex_compression_platform_tests",
+    srcs:  ["src/**/ApexCompressionTests.java"],
+    libs: ["tradefed", "truth-prebuilt"],
+    static_libs: ["cts-install-lib-host"],
+    test_config: "apex-compression-tests.xml",
+    test_suites: ["general-tests"],
+    data: [
+        ":com.android.apex.compressed.v1",
+        ":apex_compression_tests_app"
+    ],
+}
+
+android_test_helper_app {
+    name: "apex_compression_tests_app",
+    manifest: "app/AndroidManifest.xml",
+    srcs: ["app/src/**/*.java"],
+    static_libs: ["androidx.test.rules", "cts-install-lib", "testng"],
     test_suites: ["general-tests"],
 }

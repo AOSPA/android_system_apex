@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <fstream>
+
 #include <android/apex/ApexInfo.h>
 #include <android/apex/ApexSessionInfo.h>
 #include <binder/IServiceManager.h>
@@ -22,6 +24,8 @@
 
 #include "session_state.pb.h"
 
+using android::base::Error;
+using android::base::Result;
 using apex::proto::SessionState;
 
 namespace android {
@@ -126,6 +130,21 @@ inline void PrintTo(const ApexInfo& apex, std::ostream* os) {
   *os << "  isFactory : " << apex.isFactory << "\n";
   *os << "  isActive : " << apex.isActive << "\n";
   *os << "}";
+}
+
+inline Result<bool> CompareFiles(const std::string& filename1,
+                                 const std::string& filename2) {
+  std::ifstream file1(filename1, std::ios::binary);
+  std::ifstream file2(filename2, std::ios::binary);
+
+  if (file1.bad() || file2.bad()) {
+    return Error() << "Could not open one of the file";
+  }
+
+  std::istreambuf_iterator<char> begin1(file1);
+  std::istreambuf_iterator<char> begin2(file2);
+
+  return std::equal(begin1, std::istreambuf_iterator<char>(), begin2);
 }
 
 }  // namespace apex

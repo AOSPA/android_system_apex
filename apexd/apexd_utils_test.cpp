@@ -15,6 +15,7 @@
  */
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 #include <errno.h>
@@ -30,6 +31,8 @@
 namespace android {
 namespace apex {
 namespace {
+
+namespace fs = std::filesystem;
 
 using android::apex::testing::IsOk;
 using android::base::Basename;
@@ -108,8 +111,6 @@ TEST(ApexdUtilTest, FindFirstExistingDirectoryFirsDoesNotExistSecondFile) {
 }
 
 TEST(ApexdUtilTest, MoveDir) {
-  namespace fs = std::filesystem;
-
   TemporaryDir from;
   TemporaryDir to;
 
@@ -176,6 +177,26 @@ TEST(ApexdUtilTest, MoveDirToDoesNotExist) {
 
   ASSERT_THAT(content,
               UnorderedElementsAre(from_1.path, from_subdir, from_2.path));
+}
+
+TEST(ApexdUtilTest, FindFilesBySuffix) {
+  TemporaryDir td;
+
+  // create files with different suffix
+  const std::string first_filename = StringPrintf("%s/first.a", td.path);
+  const std::string second_filename = StringPrintf("%s/second.b", td.path);
+  const std::string third_filename = StringPrintf("%s/third.c", td.path);
+  const std::string fourth_filename = StringPrintf("%s/fourth.c", td.path);
+
+  std::ofstream first_file(first_filename);
+  std::ofstream second_file(second_filename);
+  std::ofstream third_file(third_filename);
+  std::ofstream fourth_file(fourth_filename);
+
+  auto result = FindFilesBySuffix(td.path, {".b", ".c"});
+  ASSERT_TRUE(IsOk(result));
+  ASSERT_THAT(*result, UnorderedElementsAre(second_filename, third_filename,
+                                            fourth_filename));
 }
 
 }  // namespace

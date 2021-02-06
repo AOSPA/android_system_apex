@@ -43,12 +43,13 @@ Result<void> ApexPreinstalledData::ScanDir(const std::string& dir) {
     return {};
   }
 
-  Result<std::vector<std::string>> apex_files = FindApexFilesByName(dir);
-  if (!apex_files.ok()) {
-    return apex_files.error();
+  Result<std::vector<std::string>> all_apex_files = FindFilesBySuffix(
+      dir, {kApexPackageSuffix, kCompressedApexPackageSuffix});
+  if (!all_apex_files.ok()) {
+    return all_apex_files.error();
   }
 
-  for (const auto& file : *apex_files) {
+  for (const auto& file : *all_apex_files) {
     Result<ApexFile> apex_file = ApexFile::Open(file);
     if (!apex_file.ok()) {
       return Error() << "Failed to open " << file << " : " << apex_file.error();

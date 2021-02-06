@@ -112,5 +112,20 @@ TEST(ApexdVerityTest, RegenerateHashree) {
   ASSERT_NE(first_hashtree, second_hashtree) << hashtree_file << " was reused";
 }
 
+TEST(ApexdVerityTest, CannotPrepareHashTreeForCompressedApex) {
+  TemporaryDir td;
+
+  auto apex =
+      ApexFile::Open(GetTestFile("com.android.apex.compressed.v1.capex"));
+  ASSERT_TRUE(IsOk(apex));
+  std::string hash_tree;
+  ApexVerityData verity_data;
+  auto result = PrepareHashTree(*apex, verity_data, hash_tree);
+  ASSERT_FALSE(IsOk(result));
+  ASSERT_THAT(
+      result.error().message(),
+      ::testing::HasSubstr("Cannot prepare HashTree of compressed APEX"));
+}
+
 }  // namespace apex
 }  // namespace android
