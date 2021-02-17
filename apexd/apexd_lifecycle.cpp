@@ -30,12 +30,12 @@ using android::base::WaitForProperty;
 namespace android {
 namespace apex {
 
-bool ApexdLifecycle::isBooting() {
+bool ApexdLifecycle::IsBooting() {
   auto status = GetProperty(kApexStatusSysprop, "");
   return status != kApexStatusReady && status != kApexStatusActivated;
 }
 
-void ApexdLifecycle::waitForBootStatus(
+void ApexdLifecycle::WaitForBootStatus(
     Result<void> (&revert_fn)(const std::string&)) {
   while (!boot_completed_) {
     // Check for change in either crashing property or sys.boot_completed
@@ -66,7 +66,7 @@ void ApexdLifecycle::waitForBootStatus(
   }
 }
 
-void ApexdLifecycle::markBootCompleted() { boot_completed_ = true; }
+void ApexdLifecycle::MarkBootCompleted() { boot_completed_ = true; }
 
 }  // namespace apex
 }  // namespace android

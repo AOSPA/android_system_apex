@@ -107,7 +107,7 @@ cc_library {
 Use this when a lib has to be accessed across the APEX boundary, e.g. between
 APEXes or between an APEX and the platform.
 
-### `apex_available`
+### apex_available
 
 Any module that is “included” (not just referenced) in an APEX either via the
 direct dependency or the transitive dependency has to correctly set the

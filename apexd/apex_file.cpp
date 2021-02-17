@@ -153,7 +153,7 @@ namespace {
 
 static constexpr int kVbMetaMaxSize = 64 * 1024;
 
-std::string bytes_to_hex(const uint8_t* bytes, size_t bytes_len) {
+std::string BytesToHex(const uint8_t* bytes, size_t bytes_len) {
   std::ostringstream s;
 
   s << std::hex << std::setfill('0');
@@ -163,22 +163,22 @@ std::string bytes_to_hex(const uint8_t* bytes, size_t bytes_len) {
   return s.str();
 }
 
-std::string getSalt(const AvbHashtreeDescriptor& desc,
-                    const uint8_t* trailingData) {
-  const uint8_t* desc_salt = trailingData + desc.partition_name_len;
+std::string GetSalt(const AvbHashtreeDescriptor& desc,
+                    const uint8_t* trailing_data) {
+  const uint8_t* desc_salt = trailing_data + desc.partition_name_len;
 
-  return bytes_to_hex(desc_salt, desc.salt_len);
+  return BytesToHex(desc_salt, desc.salt_len);
 }
 
-std::string getDigest(const AvbHashtreeDescriptor& desc,
-                      const uint8_t* trailingData) {
+std::string GetDigest(const AvbHashtreeDescriptor& desc,
+                      const uint8_t* trailing_data) {
   const uint8_t* desc_digest =
-      trailingData + desc.partition_name_len + desc.salt_len;
+      trailing_data + desc.partition_name_len + desc.salt_len;
 
-  return bytes_to_hex(desc_digest, desc.root_digest_len);
+  return BytesToHex(desc_digest, desc.root_digest_len);
 }
 
-Result<std::unique_ptr<AvbFooter>> getAvbFooter(const ApexFile& apex,
+Result<std::unique_ptr<AvbFooter>> GetAvbFooter(const ApexFile& apex,
                                                 const unique_fd& fd) {
   std::array<uint8_t, AVB_FOOTER_SIZE> footer_data;
   auto footer = std::make_unique<AvbFooter>();
@@ -211,7 +211,7 @@ bool CompareKeys(const uint8_t* key, size_t length,
 }
 
 // Verifies correctness of vbmeta and returns public key it was signed with.
-Result<std::span<const uint8_t>> verifyVbMetaSignature(const ApexFile& apex,
+Result<std::span<const uint8_t>> VerifyVbMetaSignature(const ApexFile& apex,
                                                        const uint8_t* data,
                                                        size_t length) {
   const uint8_t* pk;
@@ -240,7 +240,7 @@ Result<std::span<const uint8_t>> verifyVbMetaSignature(const ApexFile& apex,
   return std::span<const uint8_t>(pk, pk_len);
 }
 
-Result<std::unique_ptr<uint8_t[]>> verifyVbMeta(const ApexFile& apex,
+Result<std::unique_ptr<uint8_t[]>> VerifyVbMeta(const ApexFile& apex,
                                                 const unique_fd& fd,
                                                 const AvbFooter& footer,
                                                 const std::string& public_key) {
@@ -256,7 +256,7 @@ Result<std::unique_ptr<uint8_t[]>> verifyVbMeta(const ApexFile& apex,
   }
 
   Result<std::span<const uint8_t>> st =
-      verifyVbMetaSignature(apex, vbmeta_buf.get(), footer.vbmeta_size);
+      VerifyVbMetaSignature(apex, vbmeta_buf.get(), footer.vbmeta_size);
   if (!st.ok()) {
     return st.error();
   }
@@ -269,7 +269,7 @@ Result<std::unique_ptr<uint8_t[]>> verifyVbMeta(const ApexFile& apex,
   return vbmeta_buf;
 }
 
-Result<const AvbHashtreeDescriptor*> findDescriptor(uint8_t* vbmeta_data,
+Result<const AvbHashtreeDescriptor*> FindDescriptor(uint8_t* vbmeta_data,
                                                     size_t vbmeta_size) {
   const AvbDescriptor** descriptors;
   size_t num_descriptors;
@@ -303,62 +303,62 @@ Result<const AvbHashtreeDescriptor*> findDescriptor(uint8_t* vbmeta_data,
   return Errorf("Couldn't find any AVB hashtree descriptors.");
 }
 
-Result<std::unique_ptr<AvbHashtreeDescriptor>> verifyDescriptor(
+Result<std::unique_ptr<AvbHashtreeDescriptor>> VerifyDescriptor(
     const AvbHashtreeDescriptor* desc) {
-  auto verifiedDesc = std::make_unique<AvbHashtreeDescriptor>();
+  auto verified_desc = std::make_unique<AvbHashtreeDescriptor>();
 
   if (!avb_hashtree_descriptor_validate_and_byteswap(desc,
-                                                     verifiedDesc.get())) {
+                                                     verified_desc.get())) {
     return Errorf("Couldn't validate AvbDescriptor.");
   }
 
-  return verifiedDesc;
+  return verified_desc;
 }
 
 }  // namespace
 
 Result<ApexVerityData> ApexFile::VerifyApexVerity(
     const std::string& public_key) const {
-  ApexVerityData verityData;
+  ApexVerityData verity_data;
 
   unique_fd fd(open(GetPath().c_str(), O_RDONLY | O_CLOEXEC));
   if (fd.get() == -1) {
     return ErrnoError() << "Failed to open " << GetPath();
   }
 
-  Result<std::unique_ptr<AvbFooter>> footer = getAvbFooter(*this, fd);
+  Result<std::unique_ptr<AvbFooter>> footer = GetAvbFooter(*this, fd);
   if (!footer.ok()) {
     return footer.error();
   }
 
   Result<std::unique_ptr<uint8_t[]>> vbmeta_data =
-      verifyVbMeta(*this, fd, **footer, public_key);
+      VerifyVbMeta(*this, fd, **footer, public_key);
   if (!vbmeta_data.ok()) {
     return vbmeta_data.error();
   }
 
   Result<const AvbHashtreeDescriptor*> descriptor =
-      findDescriptor(vbmeta_data->get(), (*footer)->vbmeta_size);
+      FindDescriptor(vbmeta_data->get(), (*footer)->vbmeta_size);
   if (!descriptor.ok()) {
     return descriptor.error();
   }
 
-  Result<std::unique_ptr<AvbHashtreeDescriptor>> verifiedDescriptor =
-      verifyDescriptor(*descriptor);
-  if (!verifiedDescriptor.ok()) {
-    return verifiedDescriptor.error();
+  Result<std::unique_ptr<AvbHashtreeDescriptor>> verified_descriptor =
+      VerifyDescriptor(*descriptor);
+  if (!verified_descriptor.ok()) {
+    return verified_descriptor.error();
   }
-  verityData.desc = std::move(*verifiedDescriptor);
+  verity_data.desc = std::move(*verified_descriptor);
 
   // This area is now safe to access, because we just verified it
-  const uint8_t* trailingData =
+  const uint8_t* trailing_data =
       (const uint8_t*)*descriptor + sizeof(AvbHashtreeDescriptor);
-  verityData.hash_algorithm =
+  verity_data.hash_algorithm =
       reinterpret_cast<const char*>((*descriptor)->hash_algorithm);
-  verityData.salt = getSalt(*verityData.desc, trailingData);
-  verityData.root_digest = getDigest(*verityData.desc, trailingData);
+  verity_data.salt = GetSalt(*verity_data.desc, trailing_data);
+  verity_data.root_digest = GetDigest(*verity_data.desc, trailing_data);
 
-  return verityData;
+  return verity_data;
 }
 
 }  // namespace apex

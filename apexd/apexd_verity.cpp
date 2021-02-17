@@ -151,7 +151,7 @@ Result<std::string> CalculateRootDigest(const std::string& hashtree_file,
 Result<PrepareHashTreeResult> PrepareHashTree(
     const ApexFile& apex, const ApexVerityData& verity_data,
     const std::string& hashtree_file) {
-  if (auto st = createDirIfNeeded(kApexHashTreeDir, 0700); !st.ok()) {
+  if (auto st = CreateDirIfNeeded(kApexHashTreeDir, 0700); !st.ok()) {
     return st.error();
   }
   bool should_regenerate_hashtree = false;

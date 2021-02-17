@@ -1,9 +1,6 @@
 {
   "presubmit": [
     {
-      "name": "apex_rollback_tests"
-    },
-    {
       "name": "apex_targetprep_tests"
     },
     {
@@ -14,6 +11,9 @@
     }
   ],
   "presubmit-large": [
+    {
+      "name": "apex_rollback_tests"
+    },
     {
       "name": "sharedlibs_host_tests"
     }

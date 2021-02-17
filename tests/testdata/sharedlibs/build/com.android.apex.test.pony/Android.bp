@@ -46,6 +46,7 @@ cc_binary {
 genrule {
     name: "com.android.apex.test.pony_stripped",
     out: ["com.android.apex.test.pony_stripped.apex"],
+    defaults: ["apexer_test_host_tools_list"],
     dist: {
         targets: ["sharedlibs_test"],
     },
@@ -57,10 +58,7 @@ genrule {
         "com.android.apex.test.pony.x509.pem",
     ],
     tools: [
-        "apexer",
-        "debugfs_static",
         "shared_libs_repack",
-        "signapk",
     ],
     cmd: "$(location shared_libs_repack) " +
          " --mode strip" +
