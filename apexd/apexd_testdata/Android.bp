@@ -80,6 +80,17 @@ genrule {
        "--output=$(genDir)/com.android.apex.compressed_different_key.capex"
 }
 
+genrule {
+  // Generates a capex which has a different public key than original_apex
+  name: "gen_key_mismatch_with_original_capex",
+  out: ["com.android.apex.compressed_key_mismatch_with_original.capex"],
+  srcs: [":com.android.apex.compressed.v1"],
+  tools: ["soong_zip"],
+  cmd: "unzip -q $(in) -d $(genDir) && " + // unzip input
+       "echo 'different-key' >> $(genDir)/apex_pubkey && " + // modify the public key
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) -L 9 " +// repack the compressed APEX
+       "-o $(genDir)/com.android.apex.compressed_key_mismatch_with_original.capex",
+}
 
 apex {
     name: "com.android.apex.compressed.v1_original",

@@ -378,6 +378,7 @@ cc_test {
     ":gen_corrupt_superblock_apex",
     ":gen_corrupt_apex",
     ":gen_capex_without_apex",
+    ":gen_key_mismatch_with_original_capex",
     ":com.android.apex.cts.shim.v1_prebuilt",
     ":com.android.apex.cts.shim.v2_prebuilt",
     ":com.android.apex.cts.shim.v2_wrong_sha_prebuilt",
