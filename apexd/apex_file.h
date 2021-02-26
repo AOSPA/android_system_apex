@@ -46,31 +46,37 @@ class ApexFile {
   ApexFile(ApexFile&&) = default;
 
   const std::string& GetPath() const { return apex_path_; }
-  int32_t GetImageOffset() const { return image_offset_; }
-  size_t GetImageSize() const { return image_size_; }
+  const std::optional<int32_t>& GetImageOffset() const { return image_offset_; }
+  const std::optional<size_t>& GetImageSize() const { return image_size_; }
   const ApexManifest& GetManifest() const { return manifest_; }
   const std::string& GetBundledPublicKey() const { return apex_pubkey_; }
-  const std::string& GetFsType() const { return fs_type_; }
+  const std::optional<std::string>& GetFsType() const { return fs_type_; }
   android::base::Result<ApexVerityData> VerifyApexVerity(
       const std::string& public_key) const;
+  bool IsCompressed() const { return is_compressed_; }
+  android::base::Result<void> Decompress(const std::string& output_path) const;
 
  private:
-  ApexFile(const std::string& apex_path, int32_t image_offset,
-           size_t image_size, ApexManifest manifest,
-           const std::string& apex_pubkey, const std::string& fs_type)
+  ApexFile(const std::string& apex_path,
+           const std::optional<int32_t>& image_offset,
+           const std::optional<size_t>& image_size, ApexManifest manifest,
+           const std::string& apex_pubkey,
+           const std::optional<std::string>& fs_type, bool is_compressed)
       : apex_path_(apex_path),
         image_offset_(image_offset),
         image_size_(image_size),
         manifest_(std::move(manifest)),
         apex_pubkey_(apex_pubkey),
-        fs_type_(fs_type) {}
+        fs_type_(fs_type),
+        is_compressed_(is_compressed) {}
 
   std::string apex_path_;
-  int32_t image_offset_;
-  size_t image_size_;
+  std::optional<int32_t> image_offset_;
+  std::optional<size_t> image_size_;
   ApexManifest manifest_;
   std::string apex_pubkey_;
-  std::string fs_type_;
+  std::optional<std::string> fs_type_;
+  bool is_compressed_;
 };
 
 }  // namespace apex

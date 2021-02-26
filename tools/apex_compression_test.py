@@ -206,6 +206,10 @@ class ApexCompressionTest(unittest.TestCase):
     self._to_cleanup.append(decompressed_apex_fp)
     return decompressed_apex_fp
 
+  def _get_type(self, apex_file_path):
+    cmd = ['deapexer', 'info', '--print-type', apex_file_path]
+    return run_host_command(cmd, True).strip()
+
   def test_compression(self):
     uncompressed_apex_fp = os.path.join(get_current_dir(), TEST_APEX + '.apex')
     # TODO(samiul): try compressing a compressed APEX
@@ -217,6 +221,9 @@ class ApexCompressionTest(unittest.TestCase):
     self.assertGreater(compressed_file_size, 0, 'Compressed APEX is empty')
     self.assertLess(compressed_file_size, uncompressed_file_size,
                     'Compressed APEX is not smaller than uncompressed APEX')
+
+    # Verify type of the apex is 'COMPRESSED'
+    self.assertEqual(self._get_type(compressed_apex_fp), 'COMPRESSED')
 
     # Verify the contents of the compressed apex files
     content_in_compressed_apex = self._get_container_files(compressed_apex_fp)
@@ -238,6 +245,9 @@ class ApexCompressionTest(unittest.TestCase):
 
     # Decompress it
     decompressed_apex_fp = self._decompress_apex(compressed_apex_fp)
+
+    # Verify type of the apex is 'UNCOMPRESSED'
+    self.assertEqual(self._get_type(decompressed_apex_fp), 'UNCOMPRESSED')
 
     # Verify decompressed APEX is same as uncompressed APEX
     self.assertEqual(get_sha1sum(uncompressed_apex_fp),

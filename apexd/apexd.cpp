@@ -285,7 +285,8 @@ Result<DmVerityDevice> CreateVerityDevice(const std::string& name,
 Result<void> RemovePreviouslyActiveApexFiles(
     const std::unordered_set<std::string>& affected_packages,
     const std::unordered_set<std::string>& files_to_keep) {
-  auto all_active_apex_files = FindApexFilesByName(kActiveApexPackagesDataDir);
+  auto all_active_apex_files =
+      FindFilesBySuffix(kActiveApexPackagesDataDir, {kApexPackageSuffix});
 
   if (!all_active_apex_files.ok()) {
     return all_active_apex_files.error();
@@ -368,6 +369,11 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
                                          const std::string& hashtree_file,
                                          bool verify_image,
                                          bool temp_mount = false) {
+  if (apex.IsCompressed()) {
+    return Error() << "Cannot directly mount compressed APEX "
+                   << apex.GetPath();
+  }
+
   LOG(VERBOSE) << "Creating mount point: " << mount_point;
   // Note: the mount point could exist in case when the APEX was activated
   // during the bootstrap phase (e.g., the runtime or tzdata APEX).
@@ -396,10 +402,13 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
 
   const std::string& full_path = apex.GetPath();
 
+  if (!apex.GetImageOffset() || !apex.GetImageSize()) {
+    return Error() << "Cannot create mount point without image offset and size";
+  }
   loop::LoopbackDeviceUniqueFd loopback_device;
   for (size_t attempts = 1;; ++attempts) {
     Result<loop::LoopbackDeviceUniqueFd> ret = loop::CreateLoopDevice(
-        full_path, apex.GetImageOffset(), apex.GetImageSize());
+        full_path, apex.GetImageOffset().value(), apex.GetImageSize().value());
     if (ret.ok()) {
       loopback_device = std::move(*ret);
       break;
@@ -484,8 +493,11 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
     mount_flags |= MS_NOEXEC;
   }
 
-  if (mount(block_device.c_str(), mount_point.c_str(), apex.GetFsType().c_str(),
-            mount_flags, nullptr) == 0) {
+  if (!apex.GetFsType()) {
+    return Error() << "Cannot mount package without FsType";
+  }
+  if (mount(block_device.c_str(), mount_point.c_str(),
+            apex.GetFsType().value().c_str(), mount_flags, nullptr) == 0) {
     LOG(INFO) << "Successfully mounted package " << full_path << " on "
               << mount_point;
     auto status = VerifyMountedImage(apex, mount_point);
@@ -767,7 +779,8 @@ Result<ApexFile> VerifySessionDir(const int session_id) {
                                  std::to_string(session_id);
   LOG(INFO) << "Scanning " << session_dir_path
             << " looking for packages to be validated";
-  Result<std::vector<std::string>> scan = FindApexFilesByName(session_dir_path);
+  Result<std::vector<std::string>> scan =
+      FindFilesBySuffix(session_dir_path, {kApexPackageSuffix});
   if (!scan.ok()) {
     LOG(WARNING) << scan.error();
     return scan.error();
@@ -817,7 +830,8 @@ Result<void> BackupActivePackages() {
     return {};
   }
 
-  auto active_packages = FindApexFilesByName(kActiveApexPackagesDataDir);
+  auto active_packages =
+      FindFilesBySuffix(kActiveApexPackagesDataDir, {kApexPackageSuffix});
   if (!active_packages.ok()) {
     return Error() << "Backup failed : " << active_packages.error();
   }
@@ -1361,12 +1375,14 @@ std::unordered_map<std::string, uint64_t> GetActivePackagesMap() {
 std::vector<ApexFile> GetFactoryPackages() {
   std::vector<ApexFile> ret;
   for (const auto& dir : kApexPackageBuiltinDirs) {
-    auto apex_files = FindApexFilesByName(dir);
-    if (!apex_files.ok()) {
-      LOG(ERROR) << apex_files.error();
+    auto all_apex_files = FindFilesBySuffix(
+        dir, {kApexPackageSuffix, kCompressedApexPackageSuffix});
+    if (!all_apex_files.ok()) {
+      LOG(ERROR) << all_apex_files.error();
       continue;
     }
-    for (const std::string& path : *apex_files) {
+
+    for (const std::string& path : *all_apex_files) {
       Result<ApexFile> apex_file = ApexFile::Open(path);
       if (!apex_file.ok()) {
         LOG(ERROR) << apex_file.error();
@@ -1418,7 +1434,8 @@ Result<std::vector<ApexFile>> ScanApexFiles(const char* apex_package_dir) {
     LOG(INFO) << "... does not exist. Skipping";
     return {};
   }
-  Result<std::vector<std::string>> scan = FindApexFilesByName(apex_package_dir);
+  Result<std::vector<std::string>> scan =
+      FindFilesBySuffix(apex_package_dir, {kApexPackageSuffix});
   if (!scan.ok()) {
     return Error() << "Failed to scan " << apex_package_dir << " : "
                    << scan.error();
@@ -1486,6 +1503,15 @@ Result<void> ActivateApexPackages(const std::vector<ApexFile>& apexes) {
   // Creates threads as many as half number of cores for the performance.
   size_t worker_num = std::max(get_nprocs_conf() >> 1, 1);
   worker_num = std::min(apex_queue.size(), worker_num);
+
+  // On -eng builds there might be two different pre-installed art apexes.
+  // Attempting to activate them in parallel will result in UB (e.g.
+  // apexd-bootstrap might crash). In order to avoid this, for the time being on
+  // -eng builds activate apexes sequentially.
+  // TODO(b/176497601): remove this.
+  if (GetProperty("ro.build.type", "") == "eng") {
+    worker_num = 1;
+  }
 
   std::vector<std::future<std::vector<Result<void>>>> futures;
   futures.reserve(worker_num);
@@ -1826,7 +1852,8 @@ void ScanStagedSessionsDirAndStage() {
     std::vector<std::string> apexes;
     bool scan_successful = true;
     for (const auto& dir_to_scan : dirs_to_scan) {
-      Result<std::vector<std::string>> scan = FindApexFilesByName(dir_to_scan);
+      Result<std::vector<std::string>> scan =
+          FindFilesBySuffix(dir_to_scan, {kApexPackageSuffix});
       if (!scan.ok()) {
         LOG(WARNING) << scan.error();
         scan_successful = false;
@@ -2510,7 +2537,8 @@ void UnmountDanglingMounts() {
 // Removes APEXes on /data that don't have corresponding pre-installed version
 // or that are corrupt
 void RemoveOrphanedApexes() {
-  auto data_apexes = FindApexFilesByName(kActiveApexPackagesDataDir);
+  auto data_apexes =
+      FindFilesBySuffix(kActiveApexPackagesDataDir, {kApexPackageSuffix});
   if (!data_apexes.ok()) {
     LOG(ERROR) << "Failed to scan " << kActiveApexPackagesDataDir << " : "
                << data_apexes.error();

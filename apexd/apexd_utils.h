@@ -233,16 +233,19 @@ inline Result<std::vector<std::string>> GetDeUserDirs() {
   return GetSubdirs(kDeNDataDir);
 }
 
-inline Result<std::vector<std::string>> FindApexFilesByName(
-    const std::string& path) {
-  auto filter_fn = [](const std::filesystem::directory_entry& entry) {
-    std::error_code ec;
-    if (entry.is_regular_file(ec) &&
-        EndsWith(entry.path().filename().string(), kApexPackageSuffix)) {
-      return true;  // APEX file, take.
-    }
-    return false;
-  };
+inline Result<std::vector<std::string>> FindFilesBySuffix(
+    const std::string& path, const std::vector<std::string>& suffix_list) {
+  auto filter_fn =
+      [&suffix_list](const std::filesystem::directory_entry& entry) {
+        for (const std::string& suffix : suffix_list) {
+          std::error_code ec;
+          if (entry.is_regular_file(ec) &&
+              EndsWith(entry.path().filename().string(), suffix)) {
+            return true;  // suffix matches, take.
+          }
+        }
+        return false;
+      };
   return ReadDir(path, filter_fn);
 }
 
@@ -256,7 +259,7 @@ inline Result<std::vector<std::string>> FindApexes(
     }
     if (!*exist) continue;
 
-    const auto& apexes = FindApexFilesByName(path);
+    const auto& apexes = FindFilesBySuffix(path, {kApexPackageSuffix});
     if (!apexes.ok()) {
       return apexes;
     }

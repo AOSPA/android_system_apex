@@ -24,13 +24,14 @@ To extract content of an APEX to the given directory:
 from __future__ import print_function
 
 import argparse
+import apex_manifest
+import enum
 import os
 import shutil
 import sys
 import subprocess
 import tempfile
 import zipfile
-import apex_manifest
 
 BLOCK_SIZE = 4096
 
@@ -235,9 +236,36 @@ def RunExtract(args):
     shutil.rmtree(os.path.join(args.dest, "lost+found"))
 
 
+class ApexType(enum.Enum):
+  INVALID = 0
+  UNCOMPRESSED = 1
+  COMPRESSED = 2
+
+
+def GetType(apex_path):
+  with zipfile.ZipFile(apex_path, 'r') as zip_file:
+    names = zip_file.namelist()
+    has_payload = 'apex_payload.img' in names
+    has_original_apex = 'original_apex' in names
+    if has_payload and has_original_apex:
+      return ApexType.INVALID
+    if has_payload:
+      return ApexType.UNCOMPRESSED
+    if has_original_apex:
+      return ApexType.COMPRESSED
+    return ApexType.INVALID
+
+
 def RunInfo(args):
-  manifest = apex_manifest.fromApex(args.apex)
-  print(apex_manifest.toJsonString(manifest))
+  if args.print_type:
+    res = GetType(args.apex)
+    if res == ApexType.INVALID:
+      print(args.apex + ' is not a valid apex')
+      sys.exit(1)
+    print(res.name)
+  else:
+    manifest = apex_manifest.fromApex(args.apex)
+    print(apex_manifest.toJsonString(manifest))
 
 
 def RunDecompress(args):
@@ -297,6 +325,9 @@ def main(argv):
 
   parser_info = subparsers.add_parser('info', help='prints APEX manifest')
   parser_info.add_argument('apex', type=str, help='APEX file')
+  parser_info.add_argument('--print-type',
+                           help='Prints type of the apex (COMPRESSED or UNCOMPRESSED)',
+                           action='store_true')
   parser_info.set_defaults(func=RunInfo)
 
   # Handle sub-command "decompress"
