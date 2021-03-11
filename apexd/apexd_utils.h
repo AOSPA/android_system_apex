@@ -36,6 +36,7 @@
 #include <android-base/scopeguard.h>
 #include <android-base/strings.h>
 #include <cutils/android_reboot.h>
+#include <selinux/android.h>
 
 #include "apex_constants.h"
 
@@ -348,6 +349,14 @@ inline Result<uintmax_t> GetFileSize(const std::string& file_path) {
   }
 
   return value;
+}
+
+inline Result<void> RestoreconPath(const std::string& path) {
+  unsigned int seflags = SELINUX_ANDROID_RESTORECON_RECURSE;
+  if (selinux_android_restorecon(path.c_str(), seflags) < 0) {
+    return ErrnoError() << "Failed to restorecon " << path;
+  }
+  return {};
 }
 
 }  // namespace apex

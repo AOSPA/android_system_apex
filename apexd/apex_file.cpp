@@ -430,10 +430,10 @@ Result<void> ApexFile::Decompress(const std::string& dest_path) const {
 
   // Open destination file descriptor
   unique_fd dest_fd(
-      open(dest_path.c_str(), O_WRONLY | O_CLOEXEC | O_CREAT, 0644));
+      open(dest_path.c_str(), O_WRONLY | O_CLOEXEC | O_CREAT | O_EXCL, 0644));
   if (dest_fd.get() == -1) {
     return ErrnoError() << "Failed to open decompression destination "
-                        << GetPath();
+                        << dest_path.c_str();
   }
 
   // Prepare a guard that deletes the extracted file if anything goes wrong
@@ -443,19 +443,8 @@ Result<void> ApexFile::Decompress(const std::string& dest_path) const {
   // Extract the original_apex to dest_path
   ret = ExtractEntryToFile(handle, &entry, dest_fd.get());
   if (ret < 0) {
-    return Error() << "Could not decompress to file " << dest_path
+    return Error() << "Could not decompress to file " << dest_path << " "
                    << ErrorCodeString(ret);
-  }
-
-  // Post decompression verification
-  auto decompressed_apex = ApexFile::Open(dest_path);
-  if (!decompressed_apex.ok()) {
-    return Error() << "Could not open decompressed APEX: "
-                   << decompressed_apex.error();
-  }
-  if (GetBundledPublicKey() != decompressed_apex->GetBundledPublicKey()) {
-    return Error()
-           << "Public key of compressed APEX is different than original APEX";
   }
 
   // Verification complete. Accept the decompressed file

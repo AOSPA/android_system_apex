@@ -19,6 +19,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "apex_constants.h"
 #include "apex_file.h"
 
 #include <android-base/result.h>
@@ -35,7 +36,9 @@ namespace apex {
 class ApexPreinstalledData final {
  public:
   // c-tor and d-tor are exposed for testing.
-  ApexPreinstalledData(){};
+  ApexPreinstalledData(
+      const std::string& decompression_dir = kApexDecompressedDir)
+      : decompression_dir_(decompression_dir){};
 
   ~ApexPreinstalledData() { data_.clear(); };
 
@@ -64,6 +67,9 @@ class ApexPreinstalledData final {
   // Checks if given |apex| is pre-installed.
   bool IsPreInstalledApex(const ApexFile& apex) const;
 
+  // Checks if given |apex| is decompressed from a pre-installed APEX
+  bool IsDecompressedApex(const ApexFile& apex) const;
+
  private:
   // Non-copyable && non-moveable.
   ApexPreinstalledData(const ApexPreinstalledData&) = delete;
@@ -83,6 +89,9 @@ class ApexPreinstalledData final {
   };
 
   std::unordered_map<std::string, ApexData> data_;
+  // Decompression directory which will be used to determine if apex is
+  // decompressed or not
+  const std::string decompression_dir_;
 };
 
 }  // namespace apex

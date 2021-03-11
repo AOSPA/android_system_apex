@@ -23,6 +23,7 @@
 #include <android-base/file.h>
 #include <android-base/properties.h>
 #include <android-base/result.h>
+#include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 
 #include "apex_constants.h"
@@ -32,6 +33,7 @@
 using android::base::Error;
 using android::base::GetProperty;
 using android::base::Result;
+using android::base::StringPrintf;
 
 namespace android {
 namespace apex {
@@ -121,12 +123,25 @@ bool ApexPreinstalledData::HasPreInstalledVersion(
   return data_.find(name) != data_.end();
 }
 
+// ApexFile is considered a decompressed APEX if it is a hard link of file in
+// |decompression_dir_| with same filename
+bool ApexPreinstalledData::IsDecompressedApex(const ApexFile& apex) const {
+  namespace fs = std::filesystem;
+  const std::string filename = fs::path(apex.GetPath()).filename();
+  const std::string decompressed_path =
+      StringPrintf("%s/%s", decompression_dir_.c_str(), filename.c_str());
+
+  std::error_code ec;
+  bool hard_link_exists = fs::equivalent(decompressed_path, apex.GetPath(), ec);
+  return !ec && hard_link_exists;
+}
+
 bool ApexPreinstalledData::IsPreInstalledApex(const ApexFile& apex) const {
   auto it = data_.find(apex.GetManifest().name());
   if (it == data_.end()) {
     return false;
   }
-  return it->second.path == apex.GetPath();
+  return it->second.path == apex.GetPath() || IsDecompressedApex(apex);
 }
 
 }  // namespace apex

@@ -1,5 +1,9 @@
 // List of clang-tidy checks that are reported as errors.
 // Please keep this list ordered lexicographically.
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 tidy_errors = [
   "android-*",
   "bugprone-infinite-loop",
@@ -75,7 +79,6 @@ cc_defaults {
   defaults: ["libapex-deps"],
   shared_libs: [
     "libbinder",
-    "libselinux",
     "liblog",
     "liblogwrap",
   ],
@@ -199,6 +202,7 @@ cc_defaults {
     "libcutils",
     "libprotobuf-cpp-full",
     "libziparchive",
+    "libselinux",
   ],
   static_libs: [
     "lib_apex_session_state_proto",
@@ -390,12 +394,15 @@ cc_test {
     ":com.android.apex.compressed.v1_original",
     "apexd_testdata/com.android.apex.test_package.avbpubkey",
     "apexd_testdata/com.android.apex.compressed.avbpubkey",
+    ":com.android.apex.test.sharedlibs_generated.v1.libvX_prebuilt",
+    ":com.android.apex.test.sharedlibs_generated.v2.libvY_prebuilt",
   ],
   srcs: [
     "apex_database_test.cpp",
     "apex_file_test.cpp",
     "apex_manifest_test.cpp",
     "apex_preinstalled_data_test.cpp",
+    "apexd_test.cpp",
     "apexd_session_test.cpp",
     "apexd_verity_test.cpp",
     "apexd_utils_test.cpp",

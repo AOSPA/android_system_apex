@@ -16,12 +16,15 @@
 
 #include <fstream>
 
+#include <android-base/errors.h>
+#include <android-base/result.h>
 #include <android/apex/ApexInfo.h>
 #include <android/apex/ApexSessionInfo.h>
 #include <binder/IServiceManager.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "apex_file.h"
 #include "session_state.pb.h"
 
 using android::base::Error;
@@ -36,6 +39,7 @@ using ::testing::AllOf;
 using ::testing::Eq;
 using ::testing::ExplainMatchResult;
 using ::testing::Field;
+using ::testing::Property;
 
 template <typename T>
 inline ::testing::AssertionResult IsOk(const android::base::Result<T>& result) {
@@ -86,6 +90,22 @@ MATCHER_P(ApexInfoEq, other, "") {
             Field("versionCode", &ApexInfo::versionCode, Eq(other.versionCode)),
             Field("isFactory", &ApexInfo::isFactory, Eq(other.isFactory)),
             Field("isActive", &ApexInfo::isActive, Eq(other.isActive))),
+      arg, result_listener);
+}
+
+MATCHER_P(ApexFileEq, other, "") {
+  return ExplainMatchResult(
+      AllOf(Property("path", &ApexFile::GetPath, Eq(other.get().GetPath())),
+            Property("image_offset", &ApexFile::GetImageOffset,
+                     Eq(other.get().GetImageOffset())),
+            Property("image_size", &ApexFile::GetImageSize,
+                     Eq(other.get().GetImageSize())),
+            Property("fs_type", &ApexFile::GetFsType,
+                     Eq(other.get().GetFsType())),
+            Property("public_key", &ApexFile::GetBundledPublicKey,
+                     Eq(other.get().GetBundledPublicKey())),
+            Property("is_compressed", &ApexFile::IsCompressed,
+                     Eq(other.get().IsCompressed()))),
       arg, result_listener);
 }
 

@@ -16,12 +16,15 @@
 
 package com.android.tests.apex.host;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
 import android.cts.install.lib.host.InstallUtilsHost;
 import android.platform.test.annotations.LargeTest;
 
+import com.android.tradefed.device.DeviceNotAvailableException;
 import com.android.tradefed.testtype.DeviceJUnit4ClassRunner;
 import com.android.tradefed.testtype.junit4.BaseHostJUnit4Test;
 import com.android.tradefed.util.CommandResult;
@@ -33,6 +36,10 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Test for platform support for Apex Compression feature
@@ -40,9 +47,12 @@ import java.io.File;
 @RunWith(DeviceJUnit4ClassRunner.class)
 public class ApexCompressionTests extends BaseHostJUnit4Test {
     private static final String COMPRESSED_APEX_PACKAGE_NAME = "com.android.apex.compressed";
+    private static final String ORIGINAL_APEX_FILE_NAME =
+            COMPRESSED_APEX_PACKAGE_NAME + ".v1_original.apex";
+    private static final String DECOMPRESSED_DIR_PATH = "/data/apex/decompressed/";
+    private static final String APEX_ACTIVE_DIR = "/data/apex/active/";
 
     private final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
-
     private boolean mWasAdbRoot = false;
 
     @Before
@@ -52,7 +62,8 @@ public class ApexCompressionTests extends BaseHostJUnit4Test {
             assumeTrue("Requires root", getDevice().enableAdbRoot());
         }
         deleteFiles("/system/apex/" + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
-                "/data/apex/active/" + COMPRESSED_APEX_PACKAGE_NAME + "*apex");
+                APEX_ACTIVE_DIR + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
+                DECOMPRESSED_DIR_PATH + COMPRESSED_APEX_PACKAGE_NAME + "*apex");
     }
 
     @After
@@ -61,7 +72,8 @@ public class ApexCompressionTests extends BaseHostJUnit4Test {
             getDevice().disableAdbRoot();
         }
         deleteFiles("/system/apex/" + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
-                "/data/apex/active/" + COMPRESSED_APEX_PACKAGE_NAME + "*apex");
+                APEX_ACTIVE_DIR + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
+                DECOMPRESSED_DIR_PATH + COMPRESSED_APEX_PACKAGE_NAME + "*apex");
     }
 
     /**
@@ -99,20 +111,141 @@ public class ApexCompressionTests extends BaseHostJUnit4Test {
         }
     }
 
-    private void pushTestApex() throws Exception {
-        final String fileName = COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex";
+    private void pushTestApex(final String fileName) throws Exception {
         final File apex = mHostUtils.getTestFile(fileName);
         getDevice().remountSystemWritable();
         assertTrue(getDevice().pushFile(apex, "/system/apex/" + fileName));
         getDevice().reboot();
     }
 
+    private List<String> getFilesInDir(String baseDir) throws DeviceNotAvailableException {
+        return getDevice().getFileEntry(baseDir).getChildren(false)
+                .stream().map(entry -> entry.getName())
+                .collect(Collectors.toList());
+    }
 
     @Test
     @LargeTest
-    public void testCompressedApexCanBeQueried() throws Exception {
-        pushTestApex();
-        runPhase("testCompressedApexCanBeQueried");
+    public void testDecompressedApexIsConsideredFactory() throws Exception {
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+        runPhase("testDecompressedApexIsConsideredFactory");
     }
 
+    @Test
+    @LargeTest
+    public void testCompressedApexIsDecompressedAndActivated() throws Exception {
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+
+        // Ensure that compressed APEX was decompressed in DECOMPRESSED_DIR_PATH
+        List<String> files = getFilesInDir(DECOMPRESSED_DIR_PATH);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+
+        // Match the decompressed apex with original byte for byte
+        final File originalApex = mHostUtils.getTestFile(ORIGINAL_APEX_FILE_NAME);
+        final byte[] originalApexFileBytes = Files.readAllBytes(Paths.get(originalApex.toURI()));
+        final File decompressedFile = getDevice().pullFile(
+                DECOMPRESSED_DIR_PATH + COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+        final byte[] decompressedFileBytes =
+                Files.readAllBytes(Paths.get(decompressedFile.toURI()));
+        assertThat(decompressedFileBytes).isEqualTo(originalApexFileBytes);
+
+        // Similarly, the decompressed APEX should be hard linked to APEX_ACTIVE_DIR
+        files = getFilesInDir(APEX_ACTIVE_DIR);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+        final File activatedApexFile = getDevice().pullFile(
+                APEX_ACTIVE_DIR + COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+        final byte[] activatedApexFileBytes =
+                Files.readAllBytes(Paths.get(activatedApexFile.toURI()));
+        assertThat(activatedApexFileBytes).isEqualTo(originalApexFileBytes);
+    }
+
+    @Test
+    @LargeTest
+    public void testDecompressedApexSurvivesReboot() throws Exception {
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+
+        // Ensure that compressed APEX was activated in APEX_ACTIVE_DIR
+        List<String> files = getFilesInDir(APEX_ACTIVE_DIR);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+
+        getDevice().reboot();
+
+        // Ensure it gets activated again on reboot
+        files = getFilesInDir(APEX_ACTIVE_DIR);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+    }
+
+    @Test
+    @LargeTest
+    public void testDecompressionDoesNotHappenOnEveryReboot() throws Exception {
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+
+        final String decompressedApexFilePath =
+                APEX_ACTIVE_DIR + COMPRESSED_APEX_PACKAGE_NAME + "@1.apex";
+        String lastModifiedTime1 =
+                getDevice().executeShellCommand("stat -c %Y " + decompressedApexFilePath);
+
+        getDevice().reboot();
+        getDevice().waitForDeviceAvailable();
+
+        String lastModifiedTime2 =
+                getDevice().executeShellCommand("stat -c %Y " + decompressedApexFilePath);
+        assertThat(lastModifiedTime1).isEqualTo(lastModifiedTime2);
+    }
+
+    @Test
+    @LargeTest
+    public void testHigherVersionOnSystemTriggerDecompression() throws Exception {
+        // Install v1 on /system partition
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+        // On boot, /data partition will have decompressed v1 APEX in it
+        List<String> files = getFilesInDir(APEX_ACTIVE_DIR);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+
+        // Now replace /system APEX with v2
+        getDevice().remountSystemWritable();
+        getDevice().executeShellCommand("rm -rf /system/apex/"
+                + COMPRESSED_APEX_PACKAGE_NAME + "*apex");
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v2.capex");
+
+        // Ensure that v2 was decompressed
+        files = getFilesInDir(APEX_ACTIVE_DIR);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@2.apex");
+    }
+
+    @Test
+    @LargeTest
+    public void testUnusedDecompressedApexIsCleanedUp_HigherVersion() throws Exception {
+        // Install v1 on /system partition
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+        // Ensure that compressed APEX was decompressed in DECOMPRESSED_DIR_PATH
+        List<String> files = getFilesInDir(DECOMPRESSED_DIR_PATH);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+
+        // Now install an update for that APEX so that decompressed APEX becomes redundant
+        runPhase("testUnusedDecompressedApexIsCleanedUp_HigherVersion");
+        getDevice().reboot();
+
+        // Verify that DECOMPRESSED_DIR_PATH is now empty
+        files = getFilesInDir(DECOMPRESSED_DIR_PATH);
+        assertThat(files).isEmpty();
+    }
+
+    @Test
+    @LargeTest
+    public void testUnusedDecompressedApexIsCleanedUp_SameVersion() throws Exception {
+        // Install v1 on /system partition
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+        // Ensure that compressed APEX was decompressed in DECOMPRESSED_DIR_PATH
+        List<String> files = getFilesInDir(DECOMPRESSED_DIR_PATH);
+        assertThat(files).contains(COMPRESSED_APEX_PACKAGE_NAME + "@1.apex");
+
+        // Now install an update for that APEX so that decompressed APEX becomes redundant
+        runPhase("testUnusedDecompressedApexIsCleanedUp_SameVersion");
+        getDevice().reboot();
+
+        // Verify that DECOMPRESSED_DIR_PATH is now empty
+        files = getFilesInDir(DECOMPRESSED_DIR_PATH);
+        assertThat(files).isEmpty();
+    }
 }

@@ -15,6 +15,10 @@
 // TODO: consider removing _prebuilt suffix from module names and make use of
 // 'prefer: true'
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 prebuilt_apex {
   name: "com.android.apex.cts.shim.v1_prebuilt",
   overrides: ["CtsShimPrebuilt", "CtsShimPrivPrebuilt"],
