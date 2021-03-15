@@ -119,6 +119,7 @@ bool gInFsCheckpointMode = false;
 
 static constexpr size_t kLoopDeviceSetupAttempts = 3u;
 
+// Please DO NOT add new modules to this list without contacting mainline-modularization@ first.
 static const std::vector<std::string> kBootstrapApexes = ([]() {
   std::vector<std::string> ret = {
       "com.android.art",

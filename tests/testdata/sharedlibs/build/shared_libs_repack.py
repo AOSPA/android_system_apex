@@ -40,6 +40,9 @@ import apex_manifest_pb2
 
 logger = logging.getLogger(__name__)
 
+def comma_separated_list(arg):
+  return arg.split(',')
+
 
 def parse_args(argv):
   parser = argparse.ArgumentParser(
@@ -63,6 +66,11 @@ def parse_args(argv):
       help='Path to the public apk key file in x509 format')
   parser.add_argument(
       '--mode', default='strip', choices=['strip', 'sharedlibs'])
+  parser.add_argument(
+      '--libs',
+      default='libc++.so,libsharedlibtest.so',
+      type=comma_separated_list,
+      help='Libraries to strip/repack. Expects comma separated values.')
   return parser.parse_args(argv)
 
 
@@ -260,7 +268,7 @@ def main(argv):
   container_files = get_container_files(apex_file_path, args.tmpdir)
   payload_dir = extract_payload_from_img(container_files['apex_payload.img'],
                                          args.tmpdir)
-  libs = ['libc++.so', 'libsharedlibtest.so']
+  libs = args.libs
 
   libpath = 'lib64'
   if not os.path.exists(os.path.join(payload_dir, libpath, libs[0])):
