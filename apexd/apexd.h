@@ -17,6 +17,7 @@
 #ifndef ANDROID_APEXD_APEXD_H_
 #define ANDROID_APEXD_APEXD_H_
 
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -26,7 +27,7 @@
 #include "apex_constants.h"
 #include "apex_database.h"
 #include "apex_file.h"
-#include "apex_preinstalled_data.h"
+#include "apex_file_repository.h"
 
 namespace android {
 namespace apex {
@@ -104,18 +105,18 @@ android::base::Result<void> MigrateSessionsDirIfNeeded();
 // Must only be called during boot (i.e apexd.status is not "ready" or
 // "activated").
 void OnStart();
-// Scans all APEX in the given directories and groups them by their package name
-std::unordered_map<std::string, std::vector<ApexFile>> ScanAndGroupApexFiles(
-    const std::vector<std::string>& dirs_to_scan);
 // For every package X, there can be at most two APEX, pre-installed vs
 // installed on data. We decide which ones should be activated and return them
 // as a list
-std::vector<ApexFile> SelectApexForActivation(
-    std::unordered_map<std::string, std::vector<ApexFile>>&& all_apex,
-    const ApexPreinstalledData& instance);
+std::vector<std::reference_wrapper<const ApexFile>> SelectApexForActivation(
+    const std::unordered_map<
+        std::string, std::vector<std::reference_wrapper<const ApexFile>>>&
+        all_apex,
+    const ApexFileRepository& instance);
 std::vector<ApexFile> ProcessCompressedApex(
-    std::vector<ApexFile>&& compressed_apex,
-    const std::string& decompression_dir, const std::string& active_apex_dir);
+    const std::vector<std::reference_wrapper<const ApexFile>>& compressed_apex,
+    const std::string& decompression_dir = kApexDecompressedDir,
+    const std::string& active_apex_dir = kActiveApexPackagesDataDir);
 // Notifies system that apexes are activated by setting apexd.status property to
 // "activated".
 // Must only be called during boot (i.e. apexd.status is not "ready" or
@@ -140,6 +141,10 @@ GetTempMountedApexData(const std::string& package);
 // Optimistically tries to remount as many APEX packages as possible.
 // For more documentation see corresponding binder call in IApexService.aidl.
 android::base::Result<void> RemountPackages();
+
+void CollectApexInfoList(std::ostream& os,
+                         const std::vector<ApexFile>& active_apexs,
+                         const std::vector<ApexFile>& inactive_apexs);
 
 }  // namespace apex
 }  // namespace android

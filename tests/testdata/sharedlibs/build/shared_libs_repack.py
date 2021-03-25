@@ -245,6 +245,7 @@ def compute_sha512(file_path):
       fb = f.read(block_size)
   return hashbuf.hexdigest()
 
+
 def parse_fs_config(fs_config):
   configs = fs_config.splitlines()
   # Result is set of configurations.
@@ -255,11 +256,20 @@ def parse_fs_config(fs_config):
     result.append(config.split())
   return result
 
+
 def config_to_str(configs):
   result = ''
   for config in configs:
     result += ' '.join(config) + '\n'
   return result
+
+
+def _extract_lib_or_lib64(payload_dir, lib_full_path):
+  # Figure out if this is lib or lib64:
+  # Strip out the payload_dir and split by /
+  libpath = lib_full_path[len(payload_dir):].lstrip('/').split('/')
+  return libpath[0]
+
 
 def main(argv):
   args = parse_args(argv)
@@ -269,11 +279,15 @@ def main(argv):
   payload_dir = extract_payload_from_img(container_files['apex_payload.img'],
                                          args.tmpdir)
   libs = args.libs
+  assert len(libs)> 0
 
-  libpath = 'lib64'
-  if not os.path.exists(os.path.join(payload_dir, libpath, libs[0])):
-    libpath = 'lib'
-  lib_paths = [os.path.join(payload_dir, libpath, lib) for lib in libs]
+  lib_paths = [os.path.join(payload_dir, lib_dir, lib)
+               for lib_dir in ['lib', 'lib64']
+               for lib in libs
+               if os.path.exists(os.path.join(payload_dir, lib_dir, lib))]
+
+  assert len(lib_paths) > 0
+
   lib_paths_hashes = [(lib, compute_sha512(lib)) for lib in lib_paths]
 
   if args.mode == 'strip':
@@ -285,7 +299,10 @@ def main(argv):
       pb.ParseFromString(f.read())
       for lib_path_hash in lib_paths_hashes:
         basename = os.path.basename(lib_path_hash[0])
-        pb.requireSharedApexLibs.append(basename + ':' + lib_path_hash[1])
+        libpath = _extract_lib_or_lib64(payload_dir, lib_path_hash[0])
+        assert libpath in ('lib', 'lib64')
+        pb.requireSharedApexLibs.append(os.path.join(libpath, basename) + ':'
+                                        + lib_path_hash[1])
         # Replace existing library with symlink
         symlink_dst = os.path.join('/', 'apex', 'sharedlibs',
                                    libpath, basename, lib_path_hash[1],
@@ -293,13 +310,21 @@ def main(argv):
         os.remove(lib_path_hash[0])
         os.system('ln -s {0} {1}'.format(symlink_dst, lib_path_hash[0]))
       #
-      # Example of resulting manifest -- use  print(MessageToString(pb)) :
+      # Example of resulting manifest:
+      # ---
       # name: "com.android.apex.test.foo"
       # version: 1
       # requireNativeLibs: "libc.so"
       # requireNativeLibs: "libdl.so"
       # requireNativeLibs: "libm.so"
-      # requireSharedApexLibs : "libc++.so:83d8f50..."
+      # requireSharedApexLibs: "lib/libc++.so:23c5dd..."
+      # requireSharedApexLibs: "lib/libsharedlibtest.so:870f38..."
+      # requireSharedApexLibs: "lib64/libc++.so:72a584..."
+      # requireSharedApexLibs: "lib64/libsharedlibtest.so:109015..."
+      # --
+      # To print uncomment the following:
+      # from google.protobuf import text_format
+      # print(text_format.MessageToString(pb))
     with open(container_files['apex_manifest.pb'], 'wb') as f:
       f.write(pb.SerializeToString())
 
@@ -309,6 +334,7 @@ def main(argv):
     pb = apex_manifest_pb2.ApexManifest()
     with open(container_files['apex_manifest.pb'], 'rb') as f:
       pb.ParseFromString(f.read())
+      del pb.requireNativeLibs[:]
       pb.provideSharedApexLibs = True
     with open(container_files['apex_manifest.pb'], 'wb') as f:
       f.write(pb.SerializeToString())
@@ -318,16 +344,33 @@ def main(argv):
       pb.ParseFromString(f.read())
 
     canned_fs_config = parse_fs_config(pb.canned_fs_config.decode('utf-8'))
-    source_lib_paths = [os.path.join('/', libpath, lib) for lib in libs]
+
+    # Remove the bin directory from payload dir and from the canned_fs_config.
+    shutil.rmtree(os.path.join(payload_dir, 'bin'))
+    canned_fs_config = [config for config in canned_fs_config
+                        if not config[0].startswith('/bin')]
+
+    # Remove from the canned_fs_config the entries we are about to relocate in
+    # different dirs.
+    source_lib_paths = [os.path.join('/', libpath, lib)
+                        for libpath in ['lib', 'lib64']
+                        for lib in libs]
+    # We backup the fs config lines for the libraries we are going to relocate,
+    # so we can set the same permissions later.
+    canned_fs_config_original_lib = {config[0] : config
+                                     for config in canned_fs_config
+                                     if config[0] in source_lib_paths}
 
     canned_fs_config = [config for config in canned_fs_config
                         if config[0] not in source_lib_paths]
 
-    # We assume that libcpp exists in lib64/ or lib/. We'll move it to a
-    # directory named lib/libc++.so/${SHA512_OF_LIBCPP}/
+    # We move any targeted library in lib64/ or lib/ to a directory named
+    # /lib64/libNAME.so/${SHA512_OF_LIBCPP}/ or
+    # /lib/libNAME.so/${SHA512_OF_LIBCPP}/
     #
     for lib_path_hash in lib_paths_hashes:
       basename = os.path.basename(lib_path_hash[0])
+      libpath = _extract_lib_or_lib64(payload_dir, lib_path_hash[0])
       tmp_lib = os.path.join(payload_dir, libpath, basename + '.bak')
       shutil.move(lib_path_hash[0], tmp_lib)
       destdir = os.path.join(payload_dir, libpath, basename, lib_path_hash[1])
@@ -339,9 +382,19 @@ def main(argv):
       canned_fs_config.append(
           ['/' + libpath + '/' + basename + '/' + lib_path_hash[1],
            '0', '2000', '0755'])
-      canned_fs_config.append([os.path.join('/', libpath, basename,
-                                            lib_path_hash[1], basename),
-                               '1000', '1000', '0644'])
+
+      if os.path.join('/', libpath, basename) in canned_fs_config_original_lib:
+        config = canned_fs_config_original_lib[os.path.join(
+                                                   '/',
+                                                   libpath,
+                                                   basename)]
+        canned_fs_config.append([os.path.join('/', libpath, basename,
+                                              lib_path_hash[1], basename),
+                                config[1], config[2], config[3]])
+      else:
+        canned_fs_config.append([os.path.join('/', libpath, basename,
+                                              lib_path_hash[1], basename),
+                                '1000', '1000', '0644'])
 
     pb.canned_fs_config = config_to_str(canned_fs_config).encode('utf-8')
     with open(container_files['apex_build_info.pb'], 'wb') as f:

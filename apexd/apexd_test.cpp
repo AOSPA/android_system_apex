@@ -22,7 +22,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "apex_preinstalled_data.h"
+#include "apex_file_repository.h"
 #include "apexd.h"
 #include "apexd_test_utils.h"
 #include "apexd_utils.h"
@@ -44,39 +44,6 @@ static std::string GetTestFile(const std::string& name) {
   return GetTestDataDir() + "/" + name;
 }
 
-TEST(ApexdUnitTest, ScanAndGroupApexFiles) {
-  TemporaryDir built_in_dir;
-  fs::copy(GetTestFile("apex.apexd_test.apex"), built_in_dir.path);
-  fs::copy(GetTestFile("com.android.apex.cts.shim.apex"), built_in_dir.path);
-  fs::copy(GetTestFile("com.android.apex.compressed.v1.capex"),
-           built_in_dir.path);
-
-  TemporaryDir data_dir;
-  fs::copy(GetTestFile("com.android.apex.cts.shim.v2.apex"), data_dir.path);
-
-  std::vector<std::string> dirs_to_scan{built_in_dir.path, data_dir.path};
-  auto result = ScanAndGroupApexFiles(dirs_to_scan);
-
-  // Verify the contents of result
-  auto apexd_test_file = ApexFile::Open(
-      StringPrintf("%s/apex.apexd_test.apex", built_in_dir.path));
-  auto shim_v1 = ApexFile::Open(
-      StringPrintf("%s/com.android.apex.cts.shim.apex", built_in_dir.path));
-  auto compressed_apex = ApexFile::Open(StringPrintf(
-      "%s/com.android.apex.compressed.v1.capex", built_in_dir.path));
-  auto shim_v2 = ApexFile::Open(
-      StringPrintf("%s/com.android.apex.cts.shim.v2.apex", data_dir.path));
-
-  ASSERT_EQ(result.size(), 3u);
-  ASSERT_THAT(result[apexd_test_file->GetManifest().name()],
-              UnorderedElementsAre(ApexFileEq(ByRef(*apexd_test_file))));
-  ASSERT_THAT(result[shim_v1->GetManifest().name()],
-              UnorderedElementsAre(ApexFileEq(ByRef(*shim_v1)),
-                                   ApexFileEq(ByRef(*shim_v2))));
-  ASSERT_THAT(result[compressed_apex->GetManifest().name()],
-              UnorderedElementsAre(ApexFileEq(ByRef(*compressed_apex))));
-}
-
 // Apex that does not have pre-installed version, does not get selected
 TEST(ApexdUnitTest, ApexMustHavePreInstalledVersionForSelection) {
   TemporaryDir built_in_dir;
@@ -85,29 +52,41 @@ TEST(ApexdUnitTest, ApexMustHavePreInstalledVersionForSelection) {
   fs::copy(
       GetTestFile("com.android.apex.test.sharedlibs_generated.v1.libvX.apex"),
       built_in_dir.path);
+  ApexFileRepository instance;
+  // Pre-installed data needs to be present so that we can add data apex
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
 
-  // Pre-installed information is not initialized
-  ApexPreinstalledData instance;
-  std::vector<std::string> dirs_to_scan{built_in_dir.path};
-  auto all_apex = ScanAndGroupApexFiles(dirs_to_scan);
-  auto result = SelectApexForActivation(std::move(all_apex), instance);
+  TemporaryDir data_dir;
+  fs::copy(GetTestFile("apex.apexd_test.apex"), data_dir.path);
+  fs::copy(GetTestFile("com.android.apex.cts.shim.apex"), data_dir.path);
+  fs::copy(
+      GetTestFile("com.android.apex.test.sharedlibs_generated.v1.libvX.apex"),
+      data_dir.path);
+  ASSERT_TRUE(IsOk(instance.AddDataApex(data_dir.path)));
+
+  const auto all_apex = instance.AllApexFilesByName();
+  // Pass a blank instance so that the data apex files are not considered
+  // pre-installed
+  const ApexFileRepository instance_blank;
+  auto result = SelectApexForActivation(all_apex, instance_blank);
   ASSERT_EQ(result.size(), 0u);
-
-  // Once initialized, pre-installed APEX should get selected
-  ASSERT_TRUE(IsOk(instance.Initialize({built_in_dir.path})));
-  all_apex = ScanAndGroupApexFiles(dirs_to_scan);
-  result = SelectApexForActivation(std::move(all_apex), instance);
-  ASSERT_EQ(result.size(), 3u);
-  auto apexd_test_file = ApexFile::Open(
-      StringPrintf("%s/apex.apexd_test.apex", built_in_dir.path));
+  // When passed proper instance they should get selected
+  result = SelectApexForActivation(all_apex, instance);
+  ASSERT_EQ(result.size(), 4u);
+  auto apexd_test_file =
+      ApexFile::Open(StringPrintf("%s/apex.apexd_test.apex", data_dir.path));
   auto shim_v1 = ApexFile::Open(
-      StringPrintf("%s/com.android.apex.cts.shim.apex", built_in_dir.path));
-  auto shared_lib = ApexFile::Open(StringPrintf(
+      StringPrintf("%s/com.android.apex.cts.shim.apex", data_dir.path));
+  auto shared_lib_1 = ApexFile::Open(StringPrintf(
       "%s/com.android.apex.test.sharedlibs_generated.v1.libvX.apex",
       built_in_dir.path));
+  auto shared_lib_2 = ApexFile::Open(StringPrintf(
+      "%s/com.android.apex.test.sharedlibs_generated.v1.libvX.apex",
+      data_dir.path));
   ASSERT_THAT(result, UnorderedElementsAre(ApexFileEq(ByRef(*apexd_test_file)),
                                            ApexFileEq(ByRef(*shim_v1)),
-                                           ApexFileEq(ByRef(*shared_lib))));
+                                           ApexFileEq(ByRef(*shared_lib_1)),
+                                           ApexFileEq(ByRef(*shared_lib_2))));
 }
 
 // Higher version gets priority when selecting for activation
@@ -115,18 +94,16 @@ TEST(ApexdUnitTest, HigherVersionOfApexIsSelected) {
   TemporaryDir built_in_dir;
   fs::copy(GetTestFile("apex.apexd_test_v2.apex"), built_in_dir.path);
   fs::copy(GetTestFile("com.android.apex.cts.shim.apex"), built_in_dir.path);
-
-  // Initialize pre-installed APEX information
-  ApexPreinstalledData instance;
-  ASSERT_TRUE(IsOk(instance.Initialize({built_in_dir.path})));
+  ApexFileRepository instance;
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
 
   TemporaryDir data_dir;
   fs::copy(GetTestFile("apex.apexd_test.apex"), data_dir.path);
   fs::copy(GetTestFile("com.android.apex.cts.shim.v2.apex"), data_dir.path);
+  ASSERT_TRUE(IsOk(instance.AddDataApex(data_dir.path)));
 
-  std::vector<std::string> dirs_to_scan{built_in_dir.path, data_dir.path};
-  auto all_apex = ScanAndGroupApexFiles(dirs_to_scan);
-  auto result = SelectApexForActivation(std::move(all_apex), instance);
+  auto all_apex = instance.AllApexFilesByName();
+  auto result = SelectApexForActivation(all_apex, instance);
   ASSERT_EQ(result.size(), 2u);
 
   auto apexd_test_file_v2 = ApexFile::Open(
@@ -143,18 +120,18 @@ TEST(ApexdUnitTest, DataApexGetsPriorityForSameVersions) {
   TemporaryDir built_in_dir;
   fs::copy(GetTestFile("apex.apexd_test.apex"), built_in_dir.path);
   fs::copy(GetTestFile("com.android.apex.cts.shim.apex"), built_in_dir.path);
-
   // Initialize pre-installed APEX information
-  ApexPreinstalledData instance;
-  ASSERT_TRUE(IsOk(instance.Initialize({built_in_dir.path})));
+  ApexFileRepository instance;
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
 
   TemporaryDir data_dir;
   fs::copy(GetTestFile("apex.apexd_test.apex"), data_dir.path);
   fs::copy(GetTestFile("com.android.apex.cts.shim.apex"), data_dir.path);
+  // Initialize ApexFile repo
+  ASSERT_TRUE(IsOk(instance.AddDataApex(data_dir.path)));
 
-  std::vector<std::string> dirs_to_scan{built_in_dir.path, data_dir.path};
-  auto all_apex = ScanAndGroupApexFiles(dirs_to_scan);
-  auto result = SelectApexForActivation(std::move(all_apex), instance);
+  auto all_apex = instance.AllApexFilesByName();
+  auto result = SelectApexForActivation(all_apex, instance);
   ASSERT_EQ(result.size(), 2u);
 
   auto apexd_test_file =
@@ -171,19 +148,19 @@ TEST(ApexdUnitTest, SharedLibsCanHaveBothVersionSelected) {
   fs::copy(
       GetTestFile("com.android.apex.test.sharedlibs_generated.v1.libvX.apex"),
       built_in_dir.path);
-
   // Initialize pre-installed APEX information
-  ApexPreinstalledData instance;
-  ASSERT_TRUE(IsOk(instance.Initialize({built_in_dir.path})));
+  ApexFileRepository instance;
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
 
   TemporaryDir data_dir;
   fs::copy(
       GetTestFile("com.android.apex.test.sharedlibs_generated.v2.libvY.apex"),
       data_dir.path);
+  // Initialize data APEX information
+  ASSERT_TRUE(IsOk(instance.AddDataApex(data_dir.path)));
 
-  std::vector<std::string> dirs_to_scan{built_in_dir.path, data_dir.path};
-  auto all_apex = ScanAndGroupApexFiles(dirs_to_scan);
-  auto result = SelectApexForActivation(std::move(all_apex), instance);
+  auto all_apex = instance.AllApexFilesByName();
+  auto result = SelectApexForActivation(all_apex, instance);
   ASSERT_EQ(result.size(), 2u);
 
   auto shared_lib_v1 = ApexFile::Open(StringPrintf(
@@ -204,11 +181,10 @@ TEST(ApexdUnitTest, ProcessCompressedApex) {
       "%s/com.android.apex.compressed.v1.capex", built_in_dir.path));
 
   TemporaryDir decompression_dir, active_apex_dir;
-  std::vector<ApexFile> compressed_apex_list;
-  compressed_apex_list.emplace_back(std::move(*compressed_apex));
-  auto return_value =
-      ProcessCompressedApex(std::move(compressed_apex_list),
-                            decompression_dir.path, active_apex_dir.path);
+  std::vector<std::reference_wrapper<const ApexFile>> compressed_apex_list;
+  compressed_apex_list.emplace_back(std::cref(*compressed_apex));
+  auto return_value = ProcessCompressedApex(
+      compressed_apex_list, decompression_dir.path, active_apex_dir.path);
 
   std::string decompressed_file_path = StringPrintf(
       "%s/com.android.apex.compressed@1.apex", decompression_dir.path);
@@ -251,11 +227,10 @@ TEST(ApexdUnitTest, ProcessCompressedApexRunsVerification) {
       built_in_dir.path));
 
   TemporaryDir decompression_dir, active_apex_dir;
-  std::vector<ApexFile> compressed_apex_list;
-  compressed_apex_list.emplace_back(std::move(*compressed_apex_mismatch_key));
-  auto return_value =
-      ProcessCompressedApex(std::move(compressed_apex_list),
-                            decompression_dir.path, active_apex_dir.path);
+  std::vector<std::reference_wrapper<const ApexFile>> compressed_apex_list;
+  compressed_apex_list.emplace_back(std::cref(*compressed_apex_mismatch_key));
+  auto return_value = ProcessCompressedApex(
+      compressed_apex_list, decompression_dir.path, active_apex_dir.path);
   ASSERT_EQ(return_value.size(), 0u);
 }
 

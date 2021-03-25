@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -27,30 +28,41 @@
 namespace android {
 namespace apex {
 
-// This class encapsulates pre-installed data for all the apexes on device.
-// This data can be used to verify validity of an apex before trying to mount
-// it.
+// This class serves as a ApexFile repository for all apexes on device. It also
+// provides information about the ApexFiles it hosts, such as which are
+// pre-installed and which are data. Such information can be used, for example,
+// to verify validity of an apex before trying to mount it.
 //
 // It's expected to have a single instance of this class in a process that
 // mounts apexes (e.g. apexd, otapreopt_chroot).
-class ApexPreinstalledData final {
+class ApexFileRepository final {
  public:
   // c-tor and d-tor are exposed for testing.
-  ApexPreinstalledData(
+  ApexFileRepository(
       const std::string& decompression_dir = kApexDecompressedDir)
       : decompression_dir_(decompression_dir){};
 
-  ~ApexPreinstalledData() { data_.clear(); };
+  ~ApexFileRepository() {
+    pre_installed_store_.clear();
+    data_store_.clear();
+  };
 
   // Returns a singletone instance of this class.
-  static ApexPreinstalledData& GetInstance();
+  static ApexFileRepository& GetInstance();
 
-  // Initializes instance by collecting pre-installed data from the given
-  // |dirs|.
+  // Populate instance by collecting pre-installed apex files from the given
+  // |prebuilt_dirs|.
   // Note: this call is **not thread safe** and is expected to be performed in a
   // single thread during initialization of apexd. After initialization is
   // finished, all queries to the instance are thread safe.
-  android::base::Result<void> Initialize(const std::vector<std::string>& dirs);
+  android::base::Result<void> AddPreInstalledApex(
+      const std::vector<std::string>& prebuilt_dirs);
+
+  // Populate instance by collecting data apex files from the given |data_dir|.
+  // Note: this call is **not thread safe** and is expected to be performed in a
+  // single thread during initialization of apexd. After initialization is
+  // finished, all queries to the instance are thread safe.
+  android::base::Result<void> AddDataApex(const std::string& data_dir);
 
   // Returns trusted public key for an apex with the given |name|.
   android::base::Result<const std::string> GetPublicKey(
@@ -70,25 +82,30 @@ class ApexPreinstalledData final {
   // Checks if given |apex| is decompressed from a pre-installed APEX
   bool IsDecompressedApex(const ApexFile& apex) const;
 
+  // Returns reference to all pre-installed APEX on device
+  std::vector<std::reference_wrapper<const ApexFile>> GetPreInstalledApexFiles()
+      const;
+
+  // Returns reference to all data APEX on device
+  std::vector<std::reference_wrapper<const ApexFile>> GetDataApexFiles() const;
+
+  // Group all ApexFiles on device by their package name
+  std::unordered_map<std::string,
+                     std::vector<std::reference_wrapper<const ApexFile>>>
+  AllApexFilesByName() const;
+
  private:
   // Non-copyable && non-moveable.
-  ApexPreinstalledData(const ApexPreinstalledData&) = delete;
-  ApexPreinstalledData& operator=(const ApexPreinstalledData&) = delete;
-  ApexPreinstalledData& operator=(ApexPreinstalledData&&) = delete;
-  ApexPreinstalledData(ApexPreinstalledData&&) = delete;
+  ApexFileRepository(const ApexFileRepository&) = delete;
+  ApexFileRepository& operator=(const ApexFileRepository&) = delete;
+  ApexFileRepository& operator=(ApexFileRepository&&) = delete;
+  ApexFileRepository(ApexFileRepository&&) = delete;
 
-  // Scans apexes in the given directory and adds collected data into |data_|.
-  android::base::Result<void> ScanDir(const std::string& dir);
+  // Scans apexes in the given directory and adds collected data into
+  // |pre_installed_store_|.
+  android::base::Result<void> ScanBuiltInDir(const std::string& dir);
 
-  // Internal struct to hold pre-installed data for the given apex.
-  struct ApexData {
-    // Public key of this apex.
-    std::string public_key;
-    // Path to the pre-installed version of this apex.
-    std::string path;
-  };
-
-  std::unordered_map<std::string, ApexData> data_;
+  std::unordered_map<std::string, ApexFile> pre_installed_store_, data_store_;
   // Decompression directory which will be used to determine if apex is
   // decompressed or not
   const std::string decompression_dir_;

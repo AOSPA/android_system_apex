@@ -35,6 +35,14 @@ apex {
     // We want to force libc++.so to be available in this stub APEX, so put an empty binary.
     binaries: [ "noop" ],
     updatable: false,
+    compile_multilib: "both",
+    multilib: {
+        both: {
+            binaries: [
+                "noop",
+            ],
+        },
+    },
 }
 
 genrule {

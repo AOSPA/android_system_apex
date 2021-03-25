@@ -157,6 +157,10 @@ Result<ApexFile> ApexFile::Open(const std::string& path) {
     return manifest.error();
   }
 
+  if (is_compressed && manifest->providesharedapexlibs()) {
+    return Error() << "Apex providing sharedlibs shouldn't be compressed";
+  }
+
   // b/179211712 the stored path should be the realpath, otherwise the path we
   // get by scanning the directory would be different from the path we get
   // by reading /proc/mounts, if the apex file is on a symlink dir.

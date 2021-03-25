@@ -20,27 +20,27 @@ tidy_errors = [
   "bugprone-unused-raii",
   "cert-err34-c",
   "google-default-arguments",
-  "google-explicit-constructor",
+  // "google-explicit-constructor", // found in com_android_apex.h
   "google-readability-avoid-underscore-in-googletest-name",
   "google-readability-todo",
   "google-runtime-int",
   "google-runtime-member-string-references",
   "misc-move-const-arg",
   "misc-move-forwarding-reference",
-  "misc-unused-parameters",
+  // "misc-unused-parameters", // found in apexd_utils.h
   "misc-unused-using-decls",
   "misc-use-after-move",
-  "modernize-pass-by-value",
+  // "modernize-pass-by-value", // found in apex_database.h
   "performance-faster-string-find",
   "performance-for-range-copy",
   "performance-implicit-conversion-in-loop",
   "performance-inefficient-vector-operation",
   "performance-move-const-arg",
-  "performance-move-constructor-init",
+  // "performance-move-constructor-init", // found in apexd_loop.h
   "performance-noexcept-move-constructor",
   "performance-unnecessary-copy-initialization",
   "performance-unnecessary-value-param",
-  "readability-avoid-const-params-in-decls",
+  // "readability-avoid-const-params-in-decls", // found in apexd.h
 ]
 
 cc_defaults {
@@ -68,8 +68,8 @@ cc_defaults {
   tidy_checks: tidy_errors,
   tidy_checks_as_errors: tidy_errors,
   tidy_flags: [
-    "-format-style='file'",
-    "--header-filter='system/apex/'",
+    "-format-style=file",
+    "-header-filter=system/apex/",
   ],
 }
 
@@ -102,6 +102,8 @@ aidl_interface {
     "aidl/android/apex/ApexInfoList.aidl",
     "aidl/android/apex/ApexSessionInfo.aidl",
     "aidl/android/apex/ApexSessionParams.aidl",
+    "aidl/android/apex/CompressedApexInfo.aidl",
+    "aidl/android/apex/CompressedApexInfoList.aidl",
     "aidl/android/apex/IApexService.aidl",
   ],
   local_include_dir: "aidl",
@@ -226,8 +228,8 @@ cc_library_static {
   ],
   srcs: [
     "apex_file.cpp",
+    "apex_file_repository.cpp",
     "apex_manifest.cpp",
-    "apex_preinstalled_data.cpp",
     "apex_shim.cpp",
   ],
   host_supported: true,
@@ -390,6 +392,7 @@ cc_test {
     ":com.android.apex.cts.shim.v2_additional_folder_prebuilt",
     ":com.android.apex.cts.shim.v2_with_pre_install_hook_prebuilt",
     ":com.android.apex.cts.shim.v2_with_post_install_hook_prebuilt",
+    ":com.android.apex.compressed_sharedlibs",
     ":com.android.apex.compressed.v1",
     ":com.android.apex.compressed.v1_original",
     "apexd_testdata/com.android.apex.test_package.avbpubkey",
@@ -400,8 +403,8 @@ cc_test {
   srcs: [
     "apex_database_test.cpp",
     "apex_file_test.cpp",
+    "apex_file_repository_test.cpp",
     "apex_manifest_test.cpp",
-    "apex_preinstalled_data_test.cpp",
     "apexd_test.cpp",
     "apexd_session_test.cpp",
     "apexd_verity_test.cpp",

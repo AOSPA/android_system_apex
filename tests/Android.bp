@@ -191,6 +191,7 @@ java_test_host {
         ":com.android.apex.test.sharedlibs_secondary_generated.v1.libvZ_prebuilt",
     ],
     static_libs: [
+        "compatibility-host-util",
         "cts-install-lib-host",
         "frameworks-base-hostutils",
         "truth-prebuilt"

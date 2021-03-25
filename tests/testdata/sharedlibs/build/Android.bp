@@ -23,6 +23,17 @@ cc_binary {
     shared_libs: [
       "libsharedlibtest",
     ],
+    multilib: {
+        lib32: {
+            suffix: "32",
+        },
+        lib64: {
+            suffix: "64",
+        },
+    },
+
+    compile_multilib: "both",
+
     apex_available: [
       "com.android.apex.test.sharedlibs_stub",
       "com.android.apex.test.sharedlibs_secondary_stub",

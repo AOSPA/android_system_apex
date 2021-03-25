@@ -36,7 +36,7 @@
 #include <utils/String16.h>
 
 #include "apex_file.h"
-#include "apex_preinstalled_data.h"
+#include "apex_file_repository.h"
 #include "apexd.h"
 #include "apexd_session.h"
 #include "string_log.h"
@@ -104,6 +104,9 @@ class ApexService : public BnApexService {
   BinderStatus recollectPreinstalledData(
       const std::vector<std::string>& paths) override;
   BinderStatus markBootCompleted() override;
+  BinderStatus calculateSizeForCompressedApex(
+      const CompressedApexInfoList& compressed_apex_info_list,
+      int64_t* required_size) override;
 
   status_t dump(int fd, const Vector<String16>& args) override;
 
@@ -219,6 +222,17 @@ BinderStatus ApexService::markBootCompleted() {
   return BinderStatus::ok();
 }
 
+BinderStatus ApexService::calculateSizeForCompressedApex(
+    const CompressedApexInfoList& compressed_apex_info_list,
+    int64_t* required_size) {
+  int64_t result = 0;
+  for (const auto& apex_info : compressed_apex_info_list.apexInfos) {
+    result += apex_info.decompressedSize;
+  }
+  *required_size = result;
+  return BinderStatus::ok();
+}
+
 static void ClearSessionInfo(ApexSessionInfo* session_info) {
   session_info->sessionId = -1;
   session_info->isUnknown = false;
@@ -273,7 +287,7 @@ void ConvertToApexSessionInfo(const ApexSession& session,
 }
 
 static ApexInfo GetApexInfo(const ApexFile& package) {
-  auto& instance = ApexPreinstalledData::GetInstance();
+  auto& instance = ApexFileRepository::GetInstance();
   ApexInfo out;
   out.moduleName = package.GetManifest().name();
   out.modulePath = package.GetPath();
@@ -578,8 +592,8 @@ BinderStatus ApexService::recollectPreinstalledData(
       !root.isOk()) {
     return root;
   }
-  ApexPreinstalledData& instance = ApexPreinstalledData::GetInstance();
-  if (auto res = instance.Initialize(paths); !res.ok()) {
+  ApexFileRepository& instance = ApexFileRepository::GetInstance();
+  if (auto res = instance.AddPreInstalledApex(paths); !res.ok()) {
     return BinderStatus::fromExceptionCode(
         BinderStatus::EX_SERVICE_SPECIFIC,
         String8(res.error().message().c_str()));
