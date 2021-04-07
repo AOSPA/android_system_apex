@@ -73,6 +73,7 @@ using android::apex::testing::ApexInfoEq;
 using android::apex::testing::CreateSessionInfo;
 using android::apex::testing::IsOk;
 using android::apex::testing::SessionInfoEq;
+using android::base::ErrnoError;
 using android::base::Join;
 using android::base::ReadFully;
 using android::base::StartsWith;
@@ -82,6 +83,7 @@ using android::dm::DeviceMapper;
 using android::fs_mgr::Fstab;
 using android::fs_mgr::GetEntryForMountPoint;
 using android::fs_mgr::ReadFstabFromFile;
+using ::apex::proto::ApexManifest;
 using ::testing::Contains;
 using ::testing::EndsWith;
 using ::testing::HasSubstr;
@@ -652,7 +654,7 @@ TEST_F(ApexServiceTest, StageFailKey) {
   // May contain one of two errors.
   std::string error = st.exceptionMessage().c_str();
 
-  ASSERT_THAT(error, HasSubstr("No preinstalled data found for package "
+  ASSERT_THAT(error, HasSubstr("No preinstalled apex found for package "
                                "com.android.apex.test_package.no_inst_key"));
 }
 
@@ -2853,8 +2855,10 @@ TEST_F(ApexServiceTest, RemountPackagesPackageOnSystemChanged) {
   auto active_apex = GetActivePackage("com.android.apex.test_package");
   ASSERT_RESULT_OK(active_apex);
   ASSERT_EQ(2u, active_apex->versionCode);
-  // Sanity check that module path didn't change.
-  ASSERT_EQ(kSystemPath, active_apex->modulePath);
+  // Check that module path didn't change, modulo symlink.
+  std::string realSystemPath;
+  ASSERT_TRUE(android::base::Realpath(kSystemPath, &realSystemPath));
+  ASSERT_EQ(realSystemPath, active_apex->modulePath);
 }
 
 TEST_F(ApexServiceActivationSuccessTest, RemountPackagesPackageOnDataChanged) {
@@ -2969,6 +2973,142 @@ TEST_F(ApexServiceActivationBannedName, ApexWithBannedNameCannotBeActivated) {
   ASSERT_FALSE(
       IsOk(service_->activatePackage(installer_->test_installed_file)));
 }
+
+namespace {
+void PrepareCompressedTestApex(const std::string& input_apex,
+                               const std::string& builtin_dir,
+                               const std::string& decompressed_dir,
+                               const std::string& active_apex_dir) {
+  const Result<ApexFile>& apex_file = ApexFile::Open(input_apex);
+  ASSERT_TRUE(apex_file.ok());
+  ASSERT_TRUE(apex_file->IsCompressed()) << "Not a compressed APEX";
+
+  auto prebuilt_file_path =
+      builtin_dir + "/" + android::base::Basename(input_apex);
+  fs::copy(input_apex, prebuilt_file_path);
+
+  const ApexManifest& manifest = apex_file->GetManifest();
+  const std::string& package = manifest.name();
+  const int64_t& version = manifest.version();
+
+  auto decompressed_file_path = decompressed_dir + "/" + package + "@" +
+                                std::to_string(version) + ".apex";
+  auto result = apex_file->Decompress(decompressed_file_path);
+  ASSERT_TRUE(result.ok()) << "Failed to decompress " << result.error();
+  auto active_apex_file_path =
+      active_apex_dir + "/" + package + "@" + std::to_string(version) + ".apex";
+  auto error =
+      link(decompressed_file_path.c_str(), active_apex_file_path.c_str());
+  ASSERT_EQ(error, 0) << "Failed to hardlink decompressed APEX";
+}
+
+CompressedApexInfo CreateCompressedApex(const std::string& name,
+                                        const int version, const int size) {
+  CompressedApexInfo result;
+  result.moduleName = name;
+  result.versionCode = version;
+  result.decompressedSize = size;
+  return result;
+}
+}  // namespace
+
+class ApexServiceTestForCompressedApex : public ApexServiceTest {
+ public:
+  static constexpr const char* kTempPrebuiltDir = "/data/apex/temp_prebuilt";
+
+  void SetUp() override {
+    ApexServiceTest::SetUp();
+    ASSERT_NE(nullptr, service_.get());
+
+    TemporaryDir decompression_dir, active_apex_dir;
+    if (0 != mkdir(kTempPrebuiltDir, 0777)) {
+      int saved_errno = errno;
+      ASSERT_EQ(saved_errno, EEXIST)
+          << kTempPrebuiltDir << ":" << strerror(saved_errno);
+    }
+    PrepareCompressedTestApex(
+        GetTestFile("com.android.apex.compressed.v1.capex"), kTempPrebuiltDir,
+        kApexDecompressedDir, kActiveApexPackagesDataDir);
+    service_->recollectPreinstalledData({kTempPrebuiltDir});
+    service_->recollectDataApex(kActiveApexPackagesDataDir);
+  }
+
+  void TearDown() override {
+    ApexServiceTest::TearDown();
+    CleanDir(kTempPrebuiltDir);
+    rmdir(kTempPrebuiltDir);
+    CleanDir(kApexDecompressedDir);
+    CleanDir(kActiveApexPackagesDataDir);
+  }
+};
+
+TEST_F(ApexServiceTestForCompressedApex, CalculateSizeForCompressedApex) {
+  int64_t result;
+  // Empty list of compressed apex info
+  {
+    CompressedApexInfoList empty_list;
+    ASSERT_TRUE(
+        IsOk(service_->calculateSizeForCompressedApex(empty_list, &result)));
+    ASSERT_EQ(result, 0ll);
+  }
+
+  // Multiple compressed APEX should get summed
+  {
+    CompressedApexInfoList non_empty_list;
+    CompressedApexInfo new_apex = CreateCompressedApex("new_apex", 1, 1);
+    CompressedApexInfo new_apex_2 = CreateCompressedApex("new_apex_2", 1, 2);
+    CompressedApexInfo compressed_apex_same_version =
+        CreateCompressedApex("com.android.apex.compressed", 1, 4);
+    CompressedApexInfo compressed_apex_higher_version =
+        CreateCompressedApex("com.android.apex.compressed", 2, 8);
+    non_empty_list.apexInfos.push_back(new_apex);
+    non_empty_list.apexInfos.push_back(new_apex_2);
+    non_empty_list.apexInfos.push_back(compressed_apex_same_version);
+    non_empty_list.apexInfos.push_back(compressed_apex_higher_version);
+    ASSERT_TRUE(IsOk(
+        service_->calculateSizeForCompressedApex(non_empty_list, &result)));
+    ASSERT_EQ(result, 11ll);  // 1+2+8. compressed_apex_same_version is ignored
+  }
+}
+
+TEST_F(ApexServiceTestForCompressedApex, ReserveSpaceForCompressedApex) {
+  // Multiple compressed APEX should reserve equal to
+  // CalculateSizeForCompressedApex
+  {
+    CompressedApexInfoList non_empty_list;
+    CompressedApexInfo new_apex = CreateCompressedApex("new_apex", 1, 1);
+    CompressedApexInfo new_apex_2 = CreateCompressedApex("new_apex_2", 1, 2);
+    CompressedApexInfo compressed_apex_same_version =
+        CreateCompressedApex("com.android.apex.compressed", 1, 4);
+    CompressedApexInfo compressed_apex_higher_version =
+        CreateCompressedApex("com.android.apex.compressed", 2, 8);
+    non_empty_list.apexInfos.push_back(new_apex);
+    non_empty_list.apexInfos.push_back(new_apex_2);
+    non_empty_list.apexInfos.push_back(compressed_apex_same_version);
+    non_empty_list.apexInfos.push_back(compressed_apex_higher_version);
+    int64_t required_size;
+    ASSERT_TRUE(IsOk(service_->calculateSizeForCompressedApex(non_empty_list,
+                                                              &required_size)));
+    ASSERT_EQ(required_size,
+              11ll);  // 1+2+8. compressed_apex_same_version is ignored
+
+    ASSERT_TRUE(IsOk(service_->reserveSpaceForCompressedApex(non_empty_list)));
+    auto files = ReadDir(kOtaReservedDir, [](auto _) { return true; });
+    ASSERT_TRUE(IsOk(files));
+    ASSERT_EQ(files->size(), 1u);
+    EXPECT_EQ((int64_t)fs::file_size((*files)[0]), required_size);
+  }
+
+  // Sending empty list should delete reserved file
+  {
+    CompressedApexInfoList empty_list;
+    ASSERT_TRUE(IsOk(service_->reserveSpaceForCompressedApex(empty_list)));
+    auto files = ReadDir(kOtaReservedDir, [](auto _) { return true; });
+    ASSERT_TRUE(IsOk(files));
+    ASSERT_EQ(files->size(), 0u);
+  }
+}
+
 }  // namespace apex
 }  // namespace android
 

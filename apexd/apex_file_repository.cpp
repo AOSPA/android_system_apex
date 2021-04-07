@@ -72,6 +72,16 @@ Result<void> ApexFileRepository::ScanBuiltInDir(const std::string& dir) {
       auto level = build_type == "eng" && name == "com.android.art"
                        ? base::ERROR
                        : base::FATAL;
+      // On some development (non-REL) builds the VNDK apex could be in /vendor.
+      // When testing CTS-on-GSI on these builds, there would be two VNDK apexes
+      // in the system, one in /system and one in /vendor.
+      static constexpr char kVndkApexModuleNamePrefix[] = "com.android.vndk.";
+      static constexpr char kPlatformVersionCodenameProperty[] =
+          "ro.build.version.codename";
+      if (android::base::StartsWith(name, kVndkApexModuleNamePrefix) &&
+          GetProperty(kPlatformVersionCodenameProperty, "REL") != "REL") {
+        level = android::base::INFO;
+      }
       LOG(level) << "Found two apex packages " << it->second.GetPath()
                  << " and " << apex_file->GetPath()
                  << " with the same module name " << name;
@@ -124,6 +134,7 @@ Result<void> ApexFileRepository::AddDataApex(const std::string& data_dir) {
 
     const std::string& name = apex_file->GetManifest().name();
     if (!HasPreInstalledVersion(name)) {
+      LOG(ERROR) << "Skipping " << file << " : no preisntalled apex";
       // Ignore data apex without corresponding pre-installed apex
       continue;
     }
@@ -131,6 +142,8 @@ Result<void> ApexFileRepository::AddDataApex(const std::string& data_dir) {
     if (!pre_installed_public_key.ok() ||
         apex_file->GetBundledPublicKey() != *pre_installed_public_key) {
       // Ignore data apex if public key doesn't match with pre-installed apex
+      LOG(ERROR) << "Skipping " << file
+                 << " : public key doesn't match pre-installed one";
       continue;
     }
 
@@ -160,7 +173,7 @@ Result<const std::string> ApexFileRepository::GetPublicKey(
     const std::string& name) const {
   auto it = pre_installed_store_.find(name);
   if (it == pre_installed_store_.end()) {
-    return Error() << "No preinstalled data found for package " << name;
+    return Error() << "No preinstalled apex found for package " << name;
   }
   return it->second.GetBundledPublicKey();
 }
@@ -176,8 +189,23 @@ Result<const std::string> ApexFileRepository::GetPreinstalledPath(
   return it->second.GetPath();
 }
 
+// TODO(b/179497746): remove this method when we add api for fetching ApexFile
+//  by name
+Result<const std::string> ApexFileRepository::GetDataPath(
+    const std::string& name) const {
+  auto it = data_store_.find(name);
+  if (it == data_store_.end()) {
+    return Error() << "No data apex found for package " << name;
+  }
+  return it->second.GetPath();
+}
+
 bool ApexFileRepository::HasPreInstalledVersion(const std::string& name) const {
   return pre_installed_store_.find(name) != pre_installed_store_.end();
+}
+
+bool ApexFileRepository::HasDataVersion(const std::string& name) const {
+  return data_store_.find(name) != data_store_.end();
 }
 
 // ApexFile is considered a decompressed APEX if it is a hard link of file in
@@ -247,6 +275,13 @@ ApexFileRepository::AllApexFilesByName() const {
   }
 
   return std::move(result);
+}
+
+std::reference_wrapper<const ApexFile> ApexFileRepository::GetPreInstalledApex(
+    const std::string& name) const {
+  auto it = pre_installed_store_.find(name);
+  CHECK(it != pre_installed_store_.end());
+  return std::cref(it->second);
 }
 
 }  // namespace apex

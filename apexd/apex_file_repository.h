@@ -38,7 +38,7 @@ namespace apex {
 class ApexFileRepository final {
  public:
   // c-tor and d-tor are exposed for testing.
-  ApexFileRepository(
+  explicit ApexFileRepository(
       const std::string& decompression_dir = kApexDecompressedDir)
       : decompression_dir_(decompression_dir){};
 
@@ -72,9 +72,16 @@ class ApexFileRepository final {
   android::base::Result<const std::string> GetPreinstalledPath(
       const std::string& name) const;
 
+  // Returns path to the data version of an apex with the given |name|.
+  android::base::Result<const std::string> GetDataPath(
+      const std::string& name) const;
+
   // Checks whether there is a pre-installed version of an apex with the given
   // |name|.
   bool HasPreInstalledVersion(const std::string& name) const;
+
+  // Checks whether there is a data version of an apex with the given |name|.
+  bool HasDataVersion(const std::string& name) const;
 
   // Checks if given |apex| is pre-installed.
   bool IsPreInstalledApex(const ApexFile& apex) const;
@@ -93,6 +100,19 @@ class ApexFileRepository final {
   std::unordered_map<std::string,
                      std::vector<std::reference_wrapper<const ApexFile>>>
   AllApexFilesByName() const;
+
+  // Returns a pre-installed version of apex with the given name. Caller is
+  // expected to check if there is a pre-installed apex with the given name
+  // using |HasPreinstalledVersion| function.
+  std::reference_wrapper<const ApexFile> GetPreInstalledApex(
+      const std::string& name) const;
+
+  // Clears ApexFileRepostiry.
+  // Only use in tests.
+  void Reset() {
+    pre_installed_store_.clear();
+    data_store_.clear();
+  }
 
  private:
   // Non-copyable && non-moveable.

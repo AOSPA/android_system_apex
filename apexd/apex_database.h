@@ -26,9 +26,6 @@
 #include <android-base/result.h>
 #include <android-base/thread_annotations.h>
 
-using android::base::Error;
-using android::base::Result;
-
 namespace android {
 namespace apex {
 
@@ -201,6 +198,12 @@ class MountedApexDatabase {
   }
 
   void PopulateFromMounts();
+
+  // Resets state of the database. Should only be used in testing.
+  inline void Reset() REQUIRES(!mounted_apexes_mutex_) {
+    std::lock_guard lock(mounted_apexes_mutex_);
+    mounted_apexes_.clear();
+  }
 
  private:
   // A map from package name to mounted apexes.

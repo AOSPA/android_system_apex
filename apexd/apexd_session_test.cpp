@@ -24,6 +24,7 @@
 #include <android-base/result.h>
 #include <android-base/scopeguard.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <gtest/gtest.h>
 
 #include "apexd_session.h"
@@ -36,6 +37,7 @@ namespace apex {
 namespace {
 
 using android::apex::testing::IsOk;
+using android::base::Join;
 using android::base::make_scope_guard;
 
 // TODO(b/170329726): add unit tests for apexd_sessions.h
@@ -63,6 +65,12 @@ TEST(ApexdSessionTest, MigrateToMetadataSessionsDir) {
 
   if (access("/metadata", F_OK) != 0) {
     GTEST_SKIP() << "Device doesn't have /metadata partition";
+  }
+
+  // This is ugly, but does the job. To have a truly hermetic unit tests we
+  // need to refactor ApexSession class.
+  for (const auto& entry : fs::directory_iterator("/metadata/apex/sessions")) {
+    fs::remove_all(entry.path());
   }
 
   // This is a very ugly test set up, but to have something better we need to
@@ -101,7 +109,8 @@ TEST(ApexdSessionTest, MigrateToMetadataSessionsDir) {
 
   ASSERT_TRUE(IsOk(ApexSession::MigrateToMetadataSessionsDir()));
 
-  ASSERT_EQ(2u, ApexSession::GetSessions().size());
+  auto sessions = ApexSession::GetSessions();
+  ASSERT_EQ(2u, sessions.size()) << Join(sessions, ',');
 
   auto migrated_session_1 = ApexSession::GetSession(239);
   ASSERT_TRUE(IsOk(migrated_session_1));

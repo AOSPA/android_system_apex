@@ -36,6 +36,8 @@
 
 using android::base::ConsumeSuffix;
 using android::base::EndsWith;
+using android::base::ErrnoError;
+using android::base::Error;
 using android::base::ParseInt;
 using android::base::ReadFileToString;
 using android::base::Result;

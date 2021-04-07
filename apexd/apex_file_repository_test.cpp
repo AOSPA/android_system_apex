@@ -53,13 +53,17 @@ static std::string GetTestFile(const std::string& name) {
 
 TEST(ApexFileRepositoryTest, InitializeSuccess) {
   // Prepare test data.
-  TemporaryDir td;
-  fs::copy(GetTestFile("apex.apexd_test.apex"), td.path);
-  fs::copy(GetTestFile("apex.apexd_test_different_app.apex"), td.path);
-  fs::copy(GetTestFile("com.android.apex.compressed.v1.capex"), td.path);
+  TemporaryDir built_in_dir, data_dir;
+  fs::copy(GetTestFile("apex.apexd_test.apex"), built_in_dir.path);
+  fs::copy(GetTestFile("apex.apexd_test_different_app.apex"),
+           built_in_dir.path);
+
+  fs::copy(GetTestFile("apex.apexd_test.apex"), data_dir.path);
+  fs::copy(GetTestFile("apex.apexd_test_different_app.apex"), data_dir.path);
 
   ApexFileRepository instance;
-  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({td.path})));
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
+  ASSERT_TRUE(IsOk(instance.AddDataApex(data_dir.path)));
 
   // Now test that apexes were scanned correctly;
   auto test_fn = [&](const std::string& apex_name) {
@@ -75,22 +79,29 @@ TEST(ApexFileRepositoryTest, InitializeSuccess) {
     {
       auto ret = instance.GetPreinstalledPath(apex->GetManifest().name());
       ASSERT_TRUE(IsOk(ret));
-      ASSERT_EQ(StringPrintf("%s/%s", td.path, apex_name.c_str()), *ret);
+      ASSERT_EQ(StringPrintf("%s/%s", built_in_dir.path, apex_name.c_str()),
+                *ret);
+    }
+
+    {
+      auto ret = instance.GetDataPath(apex->GetManifest().name());
+      ASSERT_TRUE(IsOk(ret));
+      ASSERT_EQ(StringPrintf("%s/%s", data_dir.path, apex_name.c_str()), *ret);
     }
 
     ASSERT_TRUE(instance.HasPreInstalledVersion(apex->GetManifest().name()));
+    ASSERT_TRUE(instance.HasDataVersion(apex->GetManifest().name()));
   };
 
   test_fn("apex.apexd_test.apex");
   test_fn("apex.apexd_test_different_app.apex");
-  test_fn("com.android.apex.compressed.v1.capex");
 
   // Check that second call will succeed as well.
-  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({td.path})));
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
+  ASSERT_TRUE(IsOk(instance.AddDataApex(data_dir.path)));
 
   test_fn("apex.apexd_test.apex");
   test_fn("apex.apexd_test_different_app.apex");
-  test_fn("com.android.apex.compressed.v1.capex");
 }
 
 TEST(ApexFileRepositoryTest, InitializeFailureCorruptApex) {
@@ -343,6 +354,7 @@ TEST(ApexFileRepositoryTest, AddDataApexPrioritizeHigherVersionApex) {
               UnorderedElementsAre(ApexFileEq(ByRef(*normal_apex))));
 }
 
+namespace {
 // Copies the compressed apex to |built_in_dir| and decompresses it to
 // |decompressed_dir| and then hard links to |data_dir|
 void PrepareCompressedApex(const std::string& name,
@@ -365,6 +377,7 @@ void PrepareCompressedApex(const std::string& name,
   fs::create_hard_link(decompression_path, active_path, ec);
   ASSERT_FALSE(ec) << "Failed to create hardlink";
 }
+}  // namespace
 
 TEST(ApexFileRepositoryTest, AddDataApexPrioritizeNonDecompressedApex) {
   // Prepare test data.
@@ -420,7 +433,7 @@ TEST(ApexFileRepositoryTest, GetPreInstalledApexFiles) {
                                    ApexFileEq(ByRef(*pre_apex_2))));
 }
 
-TEST(ApexdUnitTest, AllApexFilesByName) {
+TEST(ApexFileRepositoryTest, AllApexFilesByName) {
   TemporaryDir built_in_dir;
   fs::copy(GetTestFile("apex.apexd_test.apex"), built_in_dir.path);
   fs::copy(GetTestFile("com.android.apex.cts.shim.apex"), built_in_dir.path);
@@ -453,6 +466,31 @@ TEST(ApexdUnitTest, AllApexFilesByName) {
                                    ApexFileEq(ByRef(*shim_v2))));
   ASSERT_THAT(result[compressed_apex->GetManifest().name()],
               UnorderedElementsAre(ApexFileEq(ByRef(*compressed_apex))));
+}
+
+TEST(ApexFileRepositoryTest, GetPreInstalledApex) {
+  // Prepare test data.
+  TemporaryDir built_in_dir;
+  fs::copy(GetTestFile("apex.apexd_test.apex"), built_in_dir.path);
+
+  ApexFileRepository instance;
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
+
+  auto apex = ApexFile::Open(
+      StringPrintf("%s/apex.apexd_test.apex", built_in_dir.path));
+  ASSERT_RESULT_OK(apex);
+
+  auto ret = instance.GetPreInstalledApex("com.android.apex.test_package");
+  ASSERT_THAT(ret, ApexFileEq(ByRef(*apex)));
+}
+
+TEST(ApexFileRepositoryTest, GetPreInstalledApexNoSuchApexAborts) {
+  ASSERT_DEATH(
+      {
+        ApexFileRepository instance;
+        instance.GetPreInstalledApex("whatever");
+      },
+      "");
 }
 
 }  // namespace apex

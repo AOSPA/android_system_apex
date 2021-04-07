@@ -37,11 +37,13 @@
 #include "apexd_utils.h"
 
 using android::base::borrowed_fd;
+using android::base::ErrnoError;
 using android::base::Error;
 using android::base::ReadFullyAtOffset;
 using android::base::RemoveFileIfExists;
 using android::base::Result;
 using android::base::unique_fd;
+using ::apex::proto::ApexManifest;
 
 namespace android {
 namespace apex {

@@ -165,6 +165,7 @@ java_test_host {
         ":apex.apexd_test_v3",
         ":com.android.apex.cts.shim.v2_prebuilt",
         ":com.android.apex.cts.shim.v2_no_pb",
+        ":com.android.apex.cts.shim.v2_additional_file_prebuilt",
     ],
 }
 

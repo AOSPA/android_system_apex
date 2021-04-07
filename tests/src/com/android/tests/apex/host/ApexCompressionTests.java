@@ -51,6 +51,7 @@ public class ApexCompressionTests extends BaseHostJUnit4Test {
             COMPRESSED_APEX_PACKAGE_NAME + ".v1_original.apex";
     private static final String DECOMPRESSED_DIR_PATH = "/data/apex/decompressed/";
     private static final String APEX_ACTIVE_DIR = "/data/apex/active/";
+    private static final String OTA_RESERVED_DIR = "/data/apex/ota_reserved/";
 
     private final InstallUtilsHost mHostUtils = new InstallUtilsHost(this);
     private boolean mWasAdbRoot = false;
@@ -63,7 +64,8 @@ public class ApexCompressionTests extends BaseHostJUnit4Test {
         }
         deleteFiles("/system/apex/" + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
                 APEX_ACTIVE_DIR + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
-                DECOMPRESSED_DIR_PATH + COMPRESSED_APEX_PACKAGE_NAME + "*apex");
+                DECOMPRESSED_DIR_PATH + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
+                OTA_RESERVED_DIR + "*");
     }
 
     @After
@@ -73,7 +75,8 @@ public class ApexCompressionTests extends BaseHostJUnit4Test {
         }
         deleteFiles("/system/apex/" + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
                 APEX_ACTIVE_DIR + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
-                DECOMPRESSED_DIR_PATH + COMPRESSED_APEX_PACKAGE_NAME + "*apex");
+                DECOMPRESSED_DIR_PATH + COMPRESSED_APEX_PACKAGE_NAME + "*apex",
+                OTA_RESERVED_DIR + "*");
     }
 
     /**
@@ -247,5 +250,28 @@ public class ApexCompressionTests extends BaseHostJUnit4Test {
         // Verify that DECOMPRESSED_DIR_PATH is now empty
         files = getFilesInDir(DECOMPRESSED_DIR_PATH);
         assertThat(files).isEmpty();
+    }
+
+    @Test
+    @LargeTest
+    public void testReservedSpaceIsNotCleanedOnReboot() throws Exception {
+        getDevice().executeShellCommand("touch " + OTA_RESERVED_DIR + "random");
+
+        getDevice().reboot();
+
+        List<String> files = getFilesInDir(OTA_RESERVED_DIR);
+        assertThat(files).hasSize(1);
+        assertThat(files).contains("random");
+    }
+
+    @Test
+    @LargeTest
+    public void testReservedSpaceIsCleanedUpOnDecompression() throws Exception {
+        getDevice().executeShellCommand("touch " + OTA_RESERVED_DIR + "random1");
+        getDevice().executeShellCommand("touch " + OTA_RESERVED_DIR + "random2");
+
+        pushTestApex(COMPRESSED_APEX_PACKAGE_NAME + ".v1.capex");
+
+        assertThat(getFilesInDir(OTA_RESERVED_DIR)).isEmpty();
     }
 }

@@ -33,7 +33,7 @@ has the following drawbacks:
 This section describes the high-level design of the APEX file format and the
 APEX manager, which is a service that manages APEX files.
 
-### APEX format
+### APEX format {#apex-format}
 
 This is the format of an APEX file.
 
@@ -532,6 +532,108 @@ especially important when shipping pre-signed APEX prebuilts for the projects
 like Mainline. APEXes that are not pre-signed (i.e. built from the source)
 should also be non-flattened and signed with proper keys in that case. The
 device should inherit from `updatable_apex.mk` as explained above.
+
+## Compressed apexes {#compressed-apex}
+
+APEX compression is a new feature introduced in Android S. Its main purpose is
+to reduce the storage impact of updatable APEX packages: after an update to an
+APEX is installed, its pre-installed version is not used anymore, and space that
+is taken by it effectively becomes a dead weight.
+
+APEX compression minimizes the storage impact by using a highly-compressed
+set of APEX files on read-only partitions (e.g. `/system`). In Android S a
+DEFLATE zip compression is used.
+
+Note: compression doesn't provide any optimization in the following scenarios:
+
+* Bootstrap apexes that are required to be mounted very early in the boot
+  sequence. List of bootstrap apexes is configured in `kBootstrapApexes`
+  constant in `system/apex/apexd/apexd.cpp`.
+* Non-updatable apexes. Compression is only beneficial in case an updated
+  version of an apex is installed on `/data partition`.
+  Full list of updatable apexes is available at
+  https://source.android.com/devices/architecture/modular-system.
+* Dynamic shared libs apexes. Since `apexd` will always activate both versions
+  of such apexes (pre-installed and upgraded), compressing them doesn't provide
+  any value.
+
+### Compressed APEX file format
+
+TODO(b/183208430): add picture for compressed apex format.
+
+At the top level, a compressed APEX file is a deflate zip file with compression
+level of 9.
+
+The four files in an APEX file are:
+
+*   `original_apex`
+*   `apex_manifest.pb`
+*   `AndroidManifest.xml`
+*   `apex_pubkey`
+
+
+`original_apex` is the original uncompressed [APEX file](#apex-format).
+
+`apex_manifest.pb` `AndroidManifest.xml` `apex_pubkey` are copies of the
+corresponding files from `original_apex`.
+
+
+### Building compressed apex
+
+Compressed apex can be built using `apex_compression_tool.py` located at
+`system/apex/tools`.
+
+Note: the outer apk container of the produced compressed apex file won't be
+automatically signed. You will need to manually sign it with using the correct
+certificate. See [Signing Builds for Release](
+https://source.android.com/devices/tech/ota/sign_builds#apex-signing-key-replacement).
+
+There are a few different parameters related to APEX compression available in
+the build system.
+
+In `Android.bp` whether an apex is compressible is controlled by `compressible`
+property:
+
+```
+apex {
+    name: "apex.test",
+    manifest: "apex_manifest.json",
+    file_contexts: "file_contexts",
+    compressible: true,
+}
+```
+
+Note: this only serves as a hint to build system that this apex can be
+compressed. Such property is required due to the fact that not all apexes are
+compressible as mentioned in the [section above](#compressed-apex).
+
+TODO(b/183208430): add docs on how this works for prebuilts.
+
+A `PRODUCT_COMPRESSED_APEX` product flag is used to control whether a system
+image built from source should contain compressed apexes or not.
+
+For local experimentation you can force a build to compress apexes by setting
+`OVERRIDE_PRODUCT_COMPRESSED_APEX=true`.
+
+
+### Supported compression algorithms
+
+Android S only supports deflate zip compression.
+
+### Boot flow
+
+TODO(b/183208430): fill in
+
+### Interaction with OTAs
+
+#### A/B OTA
+
+TODO(b/183208430): fill in
+
+#### Non-A/B OTA
+
+TODO(b/183208430): fill in
+
 
 ## Alternatives considered when developing APEX
 

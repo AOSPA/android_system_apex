@@ -310,4 +310,33 @@ public class ApexdHostTest extends BaseHostJUnit4Test  {
             getDevice().executeShellV2Command("rm -R /metadata/apex/sessions/1543");
         }
     }
+
+    @Test
+    public void testFailsToActivateApexOnDataFallbacksToPreInstalled() throws Exception {
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
+        assumeTrue("Device requires root", getDevice().isAdbRoot());
+
+        try {
+            final File file =
+                    mHostUtils.getTestFile("com.android.apex.cts.shim.v2_additional_file.apex");
+            getDevice().pushFile(file, "/data/apex/active/com.android.apex.cts.shim@2.apex");
+
+            getDevice().reboot();
+            assertWithMessage("Timed out waiting for device to boot").that(
+                    getDevice().waitForBootComplete(Duration.ofMinutes(2).toMillis())).isTrue();
+
+            // After reboot pre-installed version of shim apex should be activated, and corrupted
+            // version on /data should be deleted.
+            final Set<ITestDevice.ApexInfo> activeApexes = getDevice().getActiveApexes();
+            ITestDevice.ApexInfo testApex = new ITestDevice.ApexInfo(
+                    "com.android.apex.cts.shim", 1L);
+            assertThat(activeApexes).contains(testApex);
+            assertThat(
+                    getDevice()
+                            .doesFileExist("/data/apex/active/com.android.apex.cts.shim@2.apex"))
+                    .isFalse();
+        } finally {
+            getDevice().deleteFile("/data/apex/active/com.android.apex.cts.shim@2.apex");
+        }
+    }
 }

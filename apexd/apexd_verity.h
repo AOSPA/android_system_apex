@@ -20,8 +20,6 @@
 
 #include "apex_file.h"
 
-using android::base::Result;
-
 namespace android {
 namespace apex {
 

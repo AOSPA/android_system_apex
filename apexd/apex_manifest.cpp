@@ -22,6 +22,7 @@
 
 using android::base::Error;
 using android::base::Result;
+using ::apex::proto::ApexManifest;
 
 namespace android {
 namespace apex {
