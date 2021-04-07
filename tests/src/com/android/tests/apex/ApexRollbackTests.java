@@ -448,8 +448,7 @@ public class ApexRollbackTests extends BaseHostJUnit4Test {
 
         // Assert that a session has failed with the expected reason
         final String stagedSessionString = getStagedSession(sessionIdToCheck);
-        assertThat(stagedSessionString).contains("Reason for revert");
-
+        assertThat(stagedSessionString).contains("Session reverted due to crashing native process");
     }
 
     String getStagedSession(String sessionId) throws DeviceNotAvailableException {

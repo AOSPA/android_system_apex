@@ -25,7 +25,6 @@
 #include <android-base/result.h>
 #include <android-base/scopeguard.h>
 #include <logwrap/logwrap.h>
-#include <selinux/android.h>
 
 using android::base::Error;
 using android::base::Result;
@@ -89,14 +88,6 @@ inline Result<void> ReplaceFiles(const std::string& from_path,
                    << to_path << "]";
   }
   scope_guard.Disable();
-  return {};
-}
-
-inline Result<void> RestoreconPath(const std::string& path) {
-  unsigned int seflags = SELINUX_ANDROID_RESTORECON_RECURSE;
-  if (selinux_android_restorecon(path.c_str(), seflags) < 0) {
-    return Error() << "Failed to restorecon " << path;
-  }
   return {};
 }
 

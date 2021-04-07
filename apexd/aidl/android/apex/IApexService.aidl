@@ -131,5 +131,5 @@ interface IApexService {
    /**
     * Informs apexd that the boot has completed.
     */
-   oneway void markBootCompleted();
+   void markBootCompleted();
 }

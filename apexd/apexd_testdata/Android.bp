@@ -15,6 +15,10 @@
 // These apex definitions will generate the prebuilt test data. The modules
 // are disabled so as not to pollute the build.
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 apex_key {
     name: "com.android.apex.test_package.key",
     public_key: "com.android.apex.test_package.avbpubkey",
@@ -47,6 +51,7 @@ apex {
     key: "com.android.apex.compressed.key",
     installable: false,
     test_only_force_compression: true,
+    updatable: false,
 }
 
 genrule {
@@ -100,6 +105,29 @@ apex {
     key: "com.android.apex.compressed.key",
     installable: false,
     compressible: false,
+    updatable: false,
+}
+
+apex {
+    name: "com.android.apex.compressed.v2",
+    manifest: "manifest_compressed_v2.json",
+    file_contexts: ":apex.test-file_contexts",
+    prebuilts: ["sample_prebuilt_file"],
+    key: "com.android.apex.compressed.key",
+    installable: false,
+    test_only_force_compression: true,
+    updatable: false,
+}
+
+apex {
+    name: "com.android.apex.compressed.v2_original",
+    manifest: "manifest_compressed_v2.json",
+    file_contexts: ":apex.test-file_contexts",
+    prebuilts: ["sample_prebuilt_file"],
+    key: "com.android.apex.compressed.key",
+    installable: false,
+    compressible: false,
+    updatable: false,
 }
 
 apex {
@@ -121,6 +149,7 @@ apex {
     key: "com.android.apex.test_package.key",
     installable: false,
     test_only_no_hashtree: true,
+    updatable: false,
 }
 
 // This APEX has same name and version as apex.apexd_test_no_hashtree, but has
@@ -137,6 +166,7 @@ apex {
     key: "com.android.apex.test_package.key",
     installable: false,
     test_only_no_hashtree: true,
+    updatable: false,
 }
 
 apex {
@@ -146,6 +176,7 @@ apex {
     prebuilts: ["sample_prebuilt_file"],
     key: "com.android.apex.test_package.key",
     installable: false,
+    updatable: false,
 }
 
 apex {
@@ -173,6 +204,7 @@ apex {
     prebuilts: ["sample_prebuilt_file"],
     key: "com.android.apex.test_package.key",
     installable: false,
+    updatable: false,
 }
 
 apex_key {
@@ -190,6 +222,7 @@ apex {
     key: "com.android.apex.test_package.preinstall.key",
     binaries: ["apex_test_preInstallHook"],
     installable: false,
+    updatable: false,
 }
 
 apex_key {
@@ -207,6 +240,7 @@ apex {
     key: "com.android.apex.test_package.postinstall.key",
     binaries: ["apex_test_postInstallHook"],
     installable: false,
+    updatable: false,
 }
 
 apex_key {
@@ -224,6 +258,7 @@ apex {
     key: "com.android.apex.test_package.prepostinstall.fail.key",
     binaries: ["apex_test_prePostInstallHookFail"],
     installable: false,
+    updatable: false,
 }
 
 apex_key {
@@ -240,6 +275,7 @@ apex {
     prebuilts: ["sample_prebuilt_file"],
     key: "com.android.apex.test_package.no_inst_key.key",
     installable: false,
+    updatable: false,
 }
 
 apex {
@@ -250,6 +286,7 @@ apex {
     key: "com.android.apex.test_package.no_inst_key.key",
     installable: false,
     payload_fs_type: "f2fs",
+    updatable: false,
 }
 
 apex_key {
@@ -266,6 +303,7 @@ apex {
     prebuilts: ["sample_prebuilt_file"],
     key: "com.android.apex.test_package_2.key",
     installable: false,
+    updatable: false,
 }
 
 sh_binary {
@@ -290,6 +328,7 @@ apex {
     prebuilts: ["sample_prebuilt_file"],
     key: "com.android.apex.test_package.key",
     installable: false,
+    updatable: false,
 }
 
 prebuilt_etc {

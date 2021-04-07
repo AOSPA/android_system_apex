@@ -40,6 +40,7 @@ namespace fs = std::filesystem;
 
 using android::apex::testing::IsOk;
 using android::base::GetExecutableDirectory;
+using android::base::RemoveFileIfExists;
 using android::base::StringPrintf;
 
 static std::string GetTestDataDir() { return GetExecutableDirectory(); }
@@ -238,6 +239,46 @@ TEST(ApexPreinstalledDataTest, IsPreInstalledApex) {
       ApexFile::Open(GetTestFile("apex.apexd_test_different_app.apex"));
   ASSERT_TRUE(IsOk(apex3));
   ASSERT_FALSE(instance.IsPreInstalledApex(*apex3));
+}
+
+TEST(ApexPreinstalledDataTest, IsDecompressedApex) {
+  // Prepare instance
+  TemporaryDir decompression_dir;
+  ApexPreinstalledData instance(decompression_dir.path);
+
+  // Prepare decompressed apex
+  std::string filename = "com.android.apex.compressed.v1_original.apex";
+  fs::copy(GetTestFile(filename), decompression_dir.path);
+  auto decompressed_path =
+      StringPrintf("%s/%s", decompression_dir.path, filename.c_str());
+  auto decompressed_apex = ApexFile::Open(decompressed_path);
+
+  // Any file which is already located in |decompression_dir| should be
+  // considered decompressed
+  ASSERT_TRUE(instance.IsDecompressedApex(*decompressed_apex));
+
+  // Hard links with same file name is considered decompressed
+  TemporaryDir active_dir;
+  auto active_path = StringPrintf("%s/%s", active_dir.path, filename.c_str());
+  std::error_code ec;
+  fs::create_hard_link(decompressed_path, active_path, ec);
+  ASSERT_FALSE(ec) << "Failed to create hardlink";
+  auto active_apex = ApexFile::Open(active_path);
+  ASSERT_TRUE(instance.IsDecompressedApex(*active_apex));
+
+  // Hard links with different filename is not considered decompressed
+  auto different_name_path =
+      StringPrintf("%s/different.name.apex", active_dir.path);
+  fs::create_hard_link(decompressed_path, different_name_path, ec);
+  ASSERT_FALSE(ec) << "Failed to create hardlink";
+  auto different_name_apex = ApexFile::Open(different_name_path);
+  ASSERT_FALSE(instance.IsDecompressedApex(*different_name_apex));
+
+  // Same file name but not hard link -> not considered decompressed
+  RemoveFileIfExists(active_path);
+  fs::copy(GetTestFile(filename), active_dir.path);
+  active_apex = ApexFile::Open(active_path);
+  ASSERT_FALSE(instance.IsDecompressedApex(*active_apex));
 }
 
 }  // namespace apex

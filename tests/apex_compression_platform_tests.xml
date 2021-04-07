@@ -14,7 +14,7 @@
      limitations under the License.
 -->
 <configuration description="Runs the apex compression test cases">
-    <option name="test-suite-tag" value="apex_compression_tests" />
+    <option name="test-suite-tag" value="apex_compression_platform_tests" />
     <option name="test-suite-tag" value="apct" />
     <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer"/>
     <target_preparer class="com.android.tradefed.targetprep.suite.SuiteApkInstaller">

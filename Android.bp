@@ -5,6 +5,10 @@
 //        module_types: ["library_linking_strategy_cc_defaults"],
 //    }
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 soong_config_string_variable {
     name: "library_linking_strategy",
     values: [

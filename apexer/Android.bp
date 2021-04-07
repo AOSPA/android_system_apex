@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 apexer_tools = [
       "apexer",
       "aapt2",
@@ -114,6 +118,7 @@ apex_test {
   ignore_system_library_special_case: true,
   key: "com.android.support.apexer.key",
   binaries: apexer_tools + apexer_go_tools,
+  updatable: false,
 }
 
 // TODO(b/148659029): this test can't run in TEST_MAPPING.

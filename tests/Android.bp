@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 java_defaults {
     name: "apex_e2e_test_defaults",
     libs: [
@@ -87,6 +91,7 @@ apex {
     key: "apex.test.key",
     certificate: ":apex.test.certificate",
     installable: false,
+    updatable: false,
 }
 
 apex_key {
@@ -198,12 +203,14 @@ java_test_host {
     name: "apex_compression_platform_tests",
     srcs:  ["src/**/ApexCompressionTests.java"],
     libs: ["tradefed", "truth-prebuilt"],
-    static_libs: ["cts-install-lib-host"],
-    test_config: "apex-compression-tests.xml",
+    static_libs: ["cts-install-lib-host", "testng"],
+    test_config: "apex_compression_platform_tests.xml",
     test_suites: ["general-tests"],
     data: [
         ":com.android.apex.compressed.v1",
-        ":apex_compression_tests_app"
+        ":com.android.apex.compressed.v1_original",
+        ":com.android.apex.compressed.v2",
+        ":apex_compression_tests_app",
     ],
 }
 
@@ -213,4 +220,8 @@ android_test_helper_app {
     srcs: ["app/src/**/*.java"],
     static_libs: ["androidx.test.rules", "cts-install-lib", "testng"],
     test_suites: ["general-tests"],
+    java_resources: [
+        ":com.android.apex.compressed.v1_original",
+        ":com.android.apex.compressed.v2_original",
+    ]
 }

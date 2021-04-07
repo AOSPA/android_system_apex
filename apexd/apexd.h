@@ -26,6 +26,7 @@
 #include "apex_constants.h"
 #include "apex_database.h"
 #include "apex_file.h"
+#include "apex_preinstalled_data.h"
 
 namespace android {
 namespace apex {
@@ -103,6 +104,18 @@ android::base::Result<void> MigrateSessionsDirIfNeeded();
 // Must only be called during boot (i.e apexd.status is not "ready" or
 // "activated").
 void OnStart();
+// Scans all APEX in the given directories and groups them by their package name
+std::unordered_map<std::string, std::vector<ApexFile>> ScanAndGroupApexFiles(
+    const std::vector<std::string>& dirs_to_scan);
+// For every package X, there can be at most two APEX, pre-installed vs
+// installed on data. We decide which ones should be activated and return them
+// as a list
+std::vector<ApexFile> SelectApexForActivation(
+    std::unordered_map<std::string, std::vector<ApexFile>>&& all_apex,
+    const ApexPreinstalledData& instance);
+std::vector<ApexFile> ProcessCompressedApex(
+    std::vector<ApexFile>&& compressed_apex,
+    const std::string& decompression_dir, const std::string& active_apex_dir);
 // Notifies system that apexes are activated by setting apexd.status property to
 // "activated".
 // Must only be called during boot (i.e. apexd.status is not "ready" or
@@ -113,6 +126,8 @@ void OnAllPackagesActivated(bool is_bootstrap);
 // Must only be called during boot (i.e. apexd.status is not "ready" or
 // "activated").
 void OnAllPackagesReady();
+void RemoveUnlinkedDecompressedApex(const std::string& decompression_dir,
+                                    const std::string& apex_active_dir);
 void OnBootCompleted();
 void BootCompletedCleanup();
 int SnapshotOrRestoreDeUserData();

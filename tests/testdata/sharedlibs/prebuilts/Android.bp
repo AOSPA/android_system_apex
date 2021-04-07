@@ -16,6 +16,10 @@
 // ./system/apex/tests/testdata/sharedlibs/build/build_artifacts.sh
 // Do NOT edit manually.
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 prebuilt_apex {
   name: "com.android.apex.test.bar_stripped.v1.libvX_prebuilt",
   arch: {

@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 apex_key {
     name: "com.android.apex.test.sharedlibs.key",
     public_key: "com.android.apex.test.sharedlibs.avbpubkey",
@@ -30,6 +34,7 @@ apex {
     installable: false,
     // We want to force libc++.so to be available in this stub APEX, so put an empty binary.
     binaries: [ "noop" ],
+    updatable: false,
 }
 
 genrule {

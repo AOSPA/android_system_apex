@@ -44,6 +44,7 @@ class ApexFile {
   static android::base::Result<ApexFile> Open(const std::string& path);
   ApexFile() = delete;
   ApexFile(ApexFile&&) = default;
+  ApexFile& operator=(ApexFile&&) = default;
 
   const std::string& GetPath() const { return apex_path_; }
   const std::optional<int32_t>& GetImageOffset() const { return image_offset_; }
