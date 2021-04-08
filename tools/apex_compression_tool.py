@@ -106,6 +106,7 @@ def RunCompress(args, work_dir):
         file_path = os.path.join(extract_dir, meta_file)
         cmd.extend(['-C', extract_dir])
         cmd.extend(['-f', file_path])
+        cmd.extend(['-s', meta_file])
 
   # Don't forget to compress
   cmd.extend(['-L', '9'])

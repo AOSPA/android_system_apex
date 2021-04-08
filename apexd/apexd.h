@@ -32,7 +32,25 @@
 namespace android {
 namespace apex {
 
+// A structure containing all the values that might need to be injected for
+// testing (e.g. apexd status property, etc.)
+//
+// Ideally we want to introduce Apexd class and use dependency injection for
+// such values, but that will require a sizeable refactoring. For the time being
+// this config should do the trick.
+struct ApexdConfig {
+  const char* apex_status_sysprop;
+  const char* active_apex_data_dir;
+};
+
+static constexpr const ApexdConfig kDefaultConfig = {
+    kApexStatusSysprop,
+    kActiveApexPackagesDataDir,
+};
+
 class CheckpointInterface;
+
+void SetConfig(const ApexdConfig& config);
 
 android::base::Result<void> ResumeRevertIfNeeded();
 

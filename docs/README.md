@@ -561,15 +561,15 @@ Note: compression doesn't provide any optimization in the following scenarios:
 
 TODO(b/183208430): add picture for compressed apex format.
 
-At the top level, a compressed APEX file is a deflate zip file with compression
-level of 9.
+At the top level, a compressed APEX file is a zip file containing the original apex in deflated
+form with compression level of 9 and other files stored uncompressed.
 
 The four files in an APEX file are:
 
-*   `original_apex`
-*   `apex_manifest.pb`
-*   `AndroidManifest.xml`
-*   `apex_pubkey`
+*   `original_apex`: deflated with compression level of 9
+*   `apex_manifest.pb`: stored only
+*   `AndroidManifest.xml`: stored only
+*   `apex_pubkey`: stored only
 
 
 `original_apex` is the original uncompressed [APEX file](#apex-format).

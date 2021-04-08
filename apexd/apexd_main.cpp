@@ -116,6 +116,8 @@ int main(int /*argc*/, char** argv) {
 
   InstallSigtermSignalHandler();
 
+  android::apex::SetConfig(android::apex::kDefaultConfig);
+
   const bool has_subcommand = argv[1] != nullptr;
   if (!android::sysprop::ApexProperties::updatable().value_or(false)) {
     LOG(INFO) << "This device does not support updatable APEX. Exiting";

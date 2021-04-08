@@ -73,19 +73,19 @@ TEST(apex_shared_libraries, symlink_libraries_loadable) {
       continue;
     }
     for (auto& p : fs::directory_iterator(lib)) {
-      if (!fs::is_symlink(p)) {
+      std::error_code ec;
+      if (!fs::is_symlink(p, ec)) {
         continue;
       }
 
       // We are only checking libraries pointing at a location inside
       // /apex/sharedlibs.
-      auto target = fs::read_symlink(p.path());
-      if (!StartsWith(target.string(), kApexSharedLibsRoot)) {
+      auto target = fs::read_symlink(p.path(), ec);
+      if (ec || !StartsWith(target.string(), kApexSharedLibsRoot)) {
         continue;
       }
 
       // Symlink validity check.
-      std::error_code ec;
       auto dest = fs::canonical(p.path(), ec);
       EXPECT_FALSE(ec) << "Failed to resolve " << p.path() << " (symlink to "
                        << target << "): " << ec;
@@ -131,7 +131,7 @@ TEST(apex_shared_libraries, symlink_libraries_loadable) {
       };
       bool found = (dl_iterate_phdr(dl_callback, &dest) == 1);
       EXPECT_TRUE(found) << "Error verifying library symlink " << p.path()
-                         << " which points to " << fs::read_symlink(p.path())
+                         << " which points to " << target
                          << " which resolves to file " << dest;
       if (found) {
         LOG(INFO) << "Verified that " << p.path()
