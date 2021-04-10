@@ -462,7 +462,9 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
   // dm-verity because they are already in the dm-verity protected partition;
   // system. However, note that we don't skip verification to ensure that APEXes
   // are correctly signed.
-  const bool mount_on_verity = !instance.IsPreInstalledApex(apex);
+  const bool mount_on_verity =
+      !instance.IsPreInstalledApex(apex) || instance.IsDecompressedApex(apex);
+
   DmVerityDevice verity_dev;
   loop::LoopbackDeviceUniqueFd loop_for_hash;
   if (mount_on_verity) {
@@ -2433,7 +2435,7 @@ std::vector<ApexFile> ProcessCompressedApex(
 
     // Files to clean up if processing fails for any reason
     std::vector<std::string> cleanup;
-    auto scope_gaurd = android::base::make_scope_guard([&cleanup] {
+    auto scope_guard = android::base::make_scope_guard([&cleanup] {
       for (const auto& file_path : cleanup) {
         RemoveFileIfExists(file_path);
       }
@@ -2485,7 +2487,7 @@ std::vector<ApexFile> ProcessCompressedApex(
     }
 
     // Decompressed APEX has been successfully processed. Accept it.
-    scope_gaurd.Disable();
+    scope_guard.Disable();
     decompressed_apex_list.emplace_back(std::move(*hardlinked_apex));
   }
   return std::move(decompressed_apex_list);
