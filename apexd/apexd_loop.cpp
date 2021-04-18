@@ -41,6 +41,7 @@
 #include "string_log.h"
 
 using android::base::Basename;
+using android::base::ErrnoError;
 using android::base::Error;
 using android::base::GetBoolProperty;
 using android::base::ParseUint;

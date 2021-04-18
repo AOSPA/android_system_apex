@@ -344,7 +344,8 @@ def main(argv):
 
   args = parser.parse_args(argv)
 
-  if not args.debugfs_path:
+  debugfs_required_for_cmd = ['list', 'extract']
+  if args.cmd in debugfs_required_for_cmd and not args.debugfs_path:
     print('ANDROID_HOST_OUT environment variable is not defined, --debugfs_path must be set',
           file=sys.stderr)
     sys.exit(1)

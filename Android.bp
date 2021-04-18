@@ -36,6 +36,7 @@ soong_config_module_type {
     variables: ["library_linking_strategy"],
     properties: [
         "manifest",
+        "min_sdk_version",
     ],
 }
 

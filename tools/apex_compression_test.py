@@ -22,7 +22,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_STORED, ZIP_DEFLATED
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +261,19 @@ class ApexCompressionTest(unittest.TestCase):
     self.assertIn(uncompressed_apex_fp
                   + ' is not a compressed APEX', str(error.exception))
 
+  def test_only_original_apex_is_compressed(self):
+    uncompressed_apex_fp = os.path.join(get_current_dir(), TEST_APEX + '.apex')
+    compressed_apex_fp = self._compress_apex(uncompressed_apex_fp)
+
+    with ZipFile(compressed_apex_fp, 'r') as zip_obj:
+      self.assertEqual(zip_obj.getinfo('original_apex').compress_type,
+                       ZIP_DEFLATED)
+      content_in_uncompressed_apex = self._get_container_files(
+          uncompressed_apex_fp)
+      for i in ['apex_manifest.json', 'apex_manifest.pb', 'apex_pubkey',
+                'apex_build_info.pb', 'AndroidManifest.xml']:
+        if i in content_in_uncompressed_apex:
+          self.assertEqual(zip_obj.getinfo(i).compress_type, ZIP_STORED)
 
 if __name__ == '__main__':
   unittest.main(verbosity=2)

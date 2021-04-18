@@ -20,6 +20,7 @@ import android.apex.ApexInfo;
 import android.apex.ApexInfoList;
 import android.apex.ApexSessionInfo;
 import android.apex.ApexSessionParams;
+import android.apex.CompressedApexInfoList;
 
 interface IApexService {
    void submitStagedSession(in ApexSessionParams params, out ApexInfoList packages);
@@ -127,9 +128,28 @@ interface IApexService {
     * on user builds. Only root is allowed to call this method.
     */
    void recollectPreinstalledData(in @utf8InCpp List<String> paths);
+   /**
+    * Forces apexd to recollect data apex from the given |path|.
+    *
+    * Not meant for use outside of testing. This call will not be functional
+    * on user builds. Only root is allowed to call this method.
+    */
+   void recollectDataApex(in @utf8InCpp String path);
 
    /**
     * Informs apexd that the boot has completed.
     */
    void markBootCompleted();
+
+   /**
+   * Assuming the provided compressed APEX will be installed on next boot,
+   * calculate how much space will be required for decompression
+   */
+   long calculateSizeForCompressedApex(in CompressedApexInfoList compressed_apex_info_list);
+
+   /**
+   * Reserve space on /data partition for compressed APEX decompression. Returns error if
+   * reservation fails. If empty list is passed, then reserved space is deallocated.
+   */
+   void reserveSpaceForCompressedApex(in CompressedApexInfoList compressed_apex_info_list);
 }

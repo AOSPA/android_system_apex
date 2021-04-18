@@ -75,7 +75,7 @@ class ApexSession {
   static void DeleteFinalizedSessions();
 
  private:
-  ApexSession(::apex::proto::SessionState state);
+  explicit ApexSession(::apex::proto::SessionState state);
   ::apex::proto::SessionState state_;
 
   static android::base::Result<ApexSession> GetSessionFromFile(

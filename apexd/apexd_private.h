@@ -33,9 +33,10 @@ static constexpr int kMkdirMode = 0755;
 
 namespace apexd_private {
 
-std::string GetPackageMountPoint(const ApexManifest& manifest);
-std::string GetPackageTempMountPoint(const ApexManifest& manifest);
-std::string GetActiveMountPoint(const ApexManifest& manifest);
+std::string GetPackageMountPoint(const ::apex::proto::ApexManifest& manifest);
+std::string GetPackageTempMountPoint(
+    const ::apex::proto::ApexManifest& manifest);
+std::string GetActiveMountPoint(const ::apex::proto::ApexManifest& manifest);
 
 android::base::Result<void> BindMount(const std::string& target,
                                       const std::string& source);

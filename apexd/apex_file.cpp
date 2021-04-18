@@ -37,11 +37,13 @@
 #include "apexd_utils.h"
 
 using android::base::borrowed_fd;
+using android::base::ErrnoError;
 using android::base::Error;
 using android::base::ReadFullyAtOffset;
 using android::base::RemoveFileIfExists;
 using android::base::Result;
 using android::base::unique_fd;
+using ::apex::proto::ApexManifest;
 
 namespace android {
 namespace apex {
@@ -155,6 +157,10 @@ Result<ApexFile> ApexFile::Open(const std::string& path) {
   Result<ApexManifest> manifest = ParseManifest(manifest_content);
   if (!manifest.ok()) {
     return manifest.error();
+  }
+
+  if (is_compressed && manifest->providesharedapexlibs()) {
+    return Error() << "Apex providing sharedlibs shouldn't be compressed";
   }
 
   // b/179211712 the stored path should be the realpath, otherwise the path we

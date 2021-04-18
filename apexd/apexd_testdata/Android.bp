@@ -353,3 +353,16 @@ prebuilt_apex {
     filename: "sharedlibs.apex",
     installable: false,
 }
+
+// A compressed apex that also provides shared libs.
+// Should be declined by ApexFile::Open.
+apex {
+    name: "com.android.apex.compressed_sharedlibs",
+    manifest: "manifest_compressed_sharedlibs.json",
+    file_contexts: ":apex.test-file_contexts",
+    prebuilts: ["sample_prebuilt_file"],
+    key: "com.android.apex.compressed.key",
+    installable: false,
+    test_only_force_compression: true,
+    updatable: false,
+}

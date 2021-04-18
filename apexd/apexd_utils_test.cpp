@@ -16,6 +16,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <new>
 #include <string>
 
 #include <errno.h>
@@ -23,8 +24,10 @@
 #include <android-base/file.h>
 #include <android-base/result.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <gtest/gtest.h>
 
+#include "apexd.h"
 #include "apexd_test_utils.h"
 #include "apexd_utils.h"
 
@@ -36,6 +39,7 @@ namespace fs = std::filesystem;
 
 using android::apex::testing::IsOk;
 using android::base::Basename;
+using android::base::Join;
 using android::base::StringPrintf;
 using ::testing::UnorderedElementsAre;
 using ::testing::UnorderedElementsAreArray;
@@ -197,6 +201,63 @@ TEST(ApexdUtilTest, FindFilesBySuffix) {
   ASSERT_TRUE(IsOk(result));
   ASSERT_THAT(*result, UnorderedElementsAre(second_filename, third_filename,
                                             fourth_filename));
+}
+
+TEST(ApexdTestUtilsTest, MountNamespaceRestorer) {
+  auto original_namespace = GetCurrentMountNamespace();
+  ASSERT_RESULT_OK(original_namespace);
+  {
+    MountNamespaceRestorer restorer;
+    // Switch to new mount namespace.
+    ASSERT_NE(-1, unshare(CLONE_NEWNS));
+    auto current_namespace = GetCurrentMountNamespace();
+    ASSERT_RESULT_OK(current_namespace);
+    ASSERT_NE(original_namespace, current_namespace);
+  }
+  // Check that we switched back to the original namespace upon exiting the
+  // scope.
+  auto current_namespace = GetCurrentMountNamespace();
+  ASSERT_RESULT_OK(current_namespace);
+  ASSERT_EQ(*original_namespace, *current_namespace);
+}
+
+TEST(ApexdTestUtilsTest, SetUpApexTestEnvironment) {
+  auto original_apex_mounts = GetApexMounts();
+  ASSERT_GT(original_apex_mounts.size(), 0u);
+  auto original_dir_content = ReadDir("/apex", [](auto _) { return true; });
+  ASSERT_TRUE(IsOk(original_dir_content));
+  {
+    MountNamespaceRestorer restorer;
+    ASSERT_TRUE(IsOk(SetUpApexTestEnvironment()));
+    // Check /apex is apex_mnt_dir.
+    char* context;
+    ASSERT_GT(getfilecon("/apex", &context), 0);
+    EXPECT_EQ(std::string(context), "u:object_r:apex_mnt_dir:s0");
+    freecon(context);
+    // Check no apexes are mounted in our test environment.
+    auto new_apex_mounts = GetApexMounts();
+    ASSERT_EQ(new_apex_mounts.size(), 0u);
+    // Check that /apex is empty.
+    auto dir_content = ReadDir("/apex", [](auto _) { return true; });
+    ASSERT_TRUE(IsOk(dir_content));
+    ASSERT_EQ(dir_content->size(), 0u)
+        << "Found following entries: " << Join(*dir_content, ',');
+    // Check that we can still access /data.
+    std::string test_dir = android::base::GetExecutableDirectory();
+    ASSERT_TRUE(android::base::StartsWith(test_dir, "/data"));
+    TemporaryFile tf(test_dir);
+    // Check that we can write.
+    ASSERT_TRUE(android::base::WriteStringToFile("secret", tf.path));
+    // And check that we can still read it
+    std::string content;
+    ASSERT_TRUE(android::base::ReadFileToString(tf.path, &content));
+    ASSERT_EQ(content, "secret");
+  }
+  auto apex_mounts = GetApexMounts();
+  ASSERT_THAT(apex_mounts, UnorderedElementsAreArray(original_apex_mounts));
+  auto apex_dir_content = ReadDir("/apex", [](auto _) { return true; });
+  ASSERT_TRUE(IsOk(apex_dir_content));
+  ASSERT_EQ(apex_dir_content->size(), original_dir_content->size());
 }
 
 }  // namespace

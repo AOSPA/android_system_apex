@@ -20,27 +20,27 @@ tidy_errors = [
   "bugprone-unused-raii",
   "cert-err34-c",
   "google-default-arguments",
-  "google-explicit-constructor",
+  // "google-explicit-constructor", // found in com_android_apex.h
   "google-readability-avoid-underscore-in-googletest-name",
   "google-readability-todo",
   "google-runtime-int",
   "google-runtime-member-string-references",
   "misc-move-const-arg",
   "misc-move-forwarding-reference",
-  "misc-unused-parameters",
+  // "misc-unused-parameters", // found in apexd_utils.h
   "misc-unused-using-decls",
   "misc-use-after-move",
-  "modernize-pass-by-value",
+  // "modernize-pass-by-value", // found in apex_database.h
   "performance-faster-string-find",
   "performance-for-range-copy",
   "performance-implicit-conversion-in-loop",
   "performance-inefficient-vector-operation",
   "performance-move-const-arg",
-  "performance-move-constructor-init",
+  // "performance-move-constructor-init", // found in apexd_loop.h
   "performance-noexcept-move-constructor",
   "performance-unnecessary-copy-initialization",
   "performance-unnecessary-value-param",
-  "readability-avoid-const-params-in-decls",
+  // "readability-avoid-const-params-in-decls", // found in apexd.h
 ]
 
 cc_defaults {
@@ -68,8 +68,8 @@ cc_defaults {
   tidy_checks: tidy_errors,
   tidy_checks_as_errors: tidy_errors,
   tidy_flags: [
-    "-format-style='file'",
-    "--header-filter='system/apex/'",
+    "-format-style=file",
+    "-header-filter=system/apex/",
   ],
 }
 
@@ -102,6 +102,8 @@ aidl_interface {
     "aidl/android/apex/ApexInfoList.aidl",
     "aidl/android/apex/ApexSessionInfo.aidl",
     "aidl/android/apex/ApexSessionParams.aidl",
+    "aidl/android/apex/CompressedApexInfo.aidl",
+    "aidl/android/apex/CompressedApexInfoList.aidl",
     "aidl/android/apex/IApexService.aidl",
   ],
   local_include_dir: "aidl",
@@ -226,8 +228,8 @@ cc_library_static {
   ],
   srcs: [
     "apex_file.cpp",
+    "apex_file_repository.cpp",
     "apex_manifest.cpp",
-    "apex_preinstalled_data.cpp",
     "apex_shim.cpp",
   ],
   host_supported: true,
@@ -346,6 +348,23 @@ genrule {
        "$(genDir)/apex.apexd_test_different_key.apex"
 }
 
+genrule {
+  // Generates an apex which has same module name as apex.apexd_test.apex, but
+  // is actually signed with a different key.
+  name: "gen_key_mismatch_apex_v2",
+  out: ["apex.apexd_test_different_key_v2.apex"],
+  srcs: [":apex.apexd_test_no_inst_key"],
+  tools: ["soong_zip", "zipalign", "conv_apex_manifest"],
+  cmd: "unzip -q $(in) -d $(genDir) && " +
+       "$(location conv_apex_manifest) setprop name com.android.apex.test_package $(genDir)/apex_manifest.pb && " +
+       "$(location conv_apex_manifest) setprop version 2 $(genDir)/apex_manifest.pb && " +
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) " +
+       "-s apex_manifest.pb -s apex_payload.img -s apex_pubkey " +
+       "-o $(genDir)/unaligned.apex && " +
+       "$(location zipalign) -f 4096 $(genDir)/unaligned.apex " +
+       "$(genDir)/apex.apexd_test_different_key_v2.apex"
+}
+
 cc_test {
   name: "ApexTestCases",
   defaults: [
@@ -376,6 +395,7 @@ cc_test {
     ":apex.corrupted_b146895998",
     ":apex.banned_name",
     ":gen_key_mismatch_apex",
+    ":gen_key_mismatch_apex_v2",
     ":gen_key_mismatch_capex",
     ":gen_manifest_mismatch_apex",
     ":gen_manifest_mismatch_apex_no_hashtree",
@@ -390,8 +410,11 @@ cc_test {
     ":com.android.apex.cts.shim.v2_additional_folder_prebuilt",
     ":com.android.apex.cts.shim.v2_with_pre_install_hook_prebuilt",
     ":com.android.apex.cts.shim.v2_with_post_install_hook_prebuilt",
+    ":com.android.apex.compressed_sharedlibs",
     ":com.android.apex.compressed.v1",
     ":com.android.apex.compressed.v1_original",
+    ":com.android.apex.compressed.v2",
+    ":com.android.apex.compressed.v2_original",
     "apexd_testdata/com.android.apex.test_package.avbpubkey",
     "apexd_testdata/com.android.apex.compressed.avbpubkey",
     ":com.android.apex.test.sharedlibs_generated.v1.libvX_prebuilt",
@@ -400,8 +423,8 @@ cc_test {
   srcs: [
     "apex_database_test.cpp",
     "apex_file_test.cpp",
+    "apex_file_repository_test.cpp",
     "apex_manifest_test.cpp",
-    "apex_preinstalled_data_test.cpp",
     "apexd_test.cpp",
     "apexd_session_test.cpp",
     "apexd_verity_test.cpp",
@@ -422,6 +445,7 @@ cc_test {
     "libfs_mgr",
     "libutils",
   ],
+  generated_sources: ["apex-info-list"],
   test_suites: ["device-tests"],
   test_config: "AndroidTest.xml",
 }

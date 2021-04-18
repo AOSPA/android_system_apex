@@ -38,7 +38,7 @@ struct LoopbackDeviceUniqueFd {
       : device_fd(std::move(fd)), name(name) {}
 
   LoopbackDeviceUniqueFd(LoopbackDeviceUniqueFd&& fd) noexcept
-      : device_fd(std::move(fd.device_fd)), name(fd.name) {}
+      : device_fd(std::move(fd.device_fd)), name(std::move(fd.name)) {}
   LoopbackDeviceUniqueFd& operator=(LoopbackDeviceUniqueFd&& other) noexcept {
     MaybeCloseBad();
     device_fd = std::move(other.device_fd);

@@ -17,6 +17,7 @@
 #ifndef ANDROID_APEXD_APEXD_H_
 #define ANDROID_APEXD_APEXD_H_
 
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -26,12 +27,30 @@
 #include "apex_constants.h"
 #include "apex_database.h"
 #include "apex_file.h"
-#include "apex_preinstalled_data.h"
+#include "apex_file_repository.h"
 
 namespace android {
 namespace apex {
 
+// A structure containing all the values that might need to be injected for
+// testing (e.g. apexd status property, etc.)
+//
+// Ideally we want to introduce Apexd class and use dependency injection for
+// such values, but that will require a sizeable refactoring. For the time being
+// this config should do the trick.
+struct ApexdConfig {
+  const char* apex_status_sysprop;
+  const char* active_apex_data_dir;
+};
+
+static constexpr const ApexdConfig kDefaultConfig = {
+    kApexStatusSysprop,
+    kActiveApexPackagesDataDir,
+};
+
 class CheckpointInterface;
+
+void SetConfig(const ApexdConfig& config);
 
 android::base::Result<void> ResumeRevertIfNeeded();
 
@@ -96,6 +115,9 @@ void InitializeVold(CheckpointInterface* checkpoint_service);
 // Initializes in-memory state (e.g. pre-installed data, activated apexes).
 // Must be called first before calling any other boot sequence related function.
 void Initialize(CheckpointInterface* checkpoint_service);
+// Initializes data apex as in-memory state. Should be called only if we are
+// not booting, since initialization timing is different when booting
+void InitializeDataApex();
 // Migrates sessions from /data/apex/session to /metadata/session.i
 // Must only be called during boot (i.e apexd.status is not "ready" or
 // "activated").
@@ -104,18 +126,18 @@ android::base::Result<void> MigrateSessionsDirIfNeeded();
 // Must only be called during boot (i.e apexd.status is not "ready" or
 // "activated").
 void OnStart();
-// Scans all APEX in the given directories and groups them by their package name
-std::unordered_map<std::string, std::vector<ApexFile>> ScanAndGroupApexFiles(
-    const std::vector<std::string>& dirs_to_scan);
 // For every package X, there can be at most two APEX, pre-installed vs
 // installed on data. We decide which ones should be activated and return them
 // as a list
-std::vector<ApexFile> SelectApexForActivation(
-    std::unordered_map<std::string, std::vector<ApexFile>>&& all_apex,
-    const ApexPreinstalledData& instance);
+std::vector<std::reference_wrapper<const ApexFile>> SelectApexForActivation(
+    const std::unordered_map<
+        std::string, std::vector<std::reference_wrapper<const ApexFile>>>&
+        all_apex,
+    const ApexFileRepository& instance);
 std::vector<ApexFile> ProcessCompressedApex(
-    std::vector<ApexFile>&& compressed_apex,
-    const std::string& decompression_dir, const std::string& active_apex_dir);
+    const std::vector<std::reference_wrapper<const ApexFile>>& compressed_apex,
+    const std::string& decompression_dir = kApexDecompressedDir,
+    const std::string& active_apex_dir = kActiveApexPackagesDataDir);
 // Notifies system that apexes are activated by setting apexd.status property to
 // "activated".
 // Must only be called during boot (i.e. apexd.status is not "ready" or
@@ -140,6 +162,28 @@ GetTempMountedApexData(const std::string& package);
 // Optimistically tries to remount as many APEX packages as possible.
 // For more documentation see corresponding binder call in IApexService.aidl.
 android::base::Result<void> RemountPackages();
+
+// Exposed for unit tests
+android::base::Result<bool> ShouldAllocateSpaceForDecompression(
+    const std::string& new_apex_name, int64_t new_apex_version,
+    const ApexFileRepository& instance);
+
+void CollectApexInfoList(std::ostream& os,
+                         const std::vector<ApexFile>& active_apexs,
+                         const std::vector<ApexFile>& inactive_apexs);
+
+// Reserve |size| bytes in |dest_dir| by creating a zero-filled file
+android::base::Result<void> ReserveSpaceForCompressedApex(
+    int64_t size, const std::string& dest_dir);
+
+// Activates apexes in otapreot_chroot environment.
+// TODO(b/172911822): support compressed apexes.
+// TODO(b/181182967): probably also need to support flattened apexes.
+int OnOtaChrootBootstrap(
+    const std::vector<std::string>& built_in_dirs = kApexPackageBuiltinDirs,
+    const std::string& apex_data_dir = kActiveApexPackagesDataDir);
+
+android::apex::MountedApexDatabase& GetApexDatabaseForTesting();
 
 }  // namespace apex
 }  // namespace android
