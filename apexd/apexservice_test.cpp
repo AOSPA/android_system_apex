@@ -1159,7 +1159,7 @@ TEST_F(ApexServiceActivationSuccessTest, ShowsUpInMountedApexDatabase) {
       << GetDebugStr(installer_.get());
 
   MountedApexDatabase db;
-  db.PopulateFromMounts();
+  db.PopulateFromMounts(kActiveApexPackagesDataDir, kApexHashTreeDir);
 
   std::optional<MountedApexData> mounted_apex;
   db.ForallMountedApexes(installer_->package,
@@ -1285,7 +1285,7 @@ TEST_F(ApexServiceNoHashtreeApexActivationTest, ShowsUpInMountedApexDatabase) {
       << GetDebugStr(installer_.get());
 
   MountedApexDatabase db;
-  db.PopulateFromMounts();
+  db.PopulateFromMounts(kActiveApexPackagesDataDir, kApexHashTreeDir);
 
   std::optional<MountedApexData> mounted_apex;
   db.ForallMountedApexes(installer_->package,

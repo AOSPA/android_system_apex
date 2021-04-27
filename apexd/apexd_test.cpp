@@ -211,7 +211,7 @@ TEST(ApexdUnitTest, ProcessCompressedApex) {
       "%s/com.android.apex.compressed.v1.capex", built_in_dir.path));
 
   TemporaryDir decompression_dir, active_apex_dir;
-  std::vector<std::reference_wrapper<const ApexFile>> compressed_apex_list;
+  std::vector<ApexFileRef> compressed_apex_list;
   compressed_apex_list.emplace_back(std::cref(*compressed_apex));
   auto return_value = ProcessCompressedApex(
       compressed_apex_list, decompression_dir.path, active_apex_dir.path);
@@ -257,7 +257,7 @@ TEST(ApexdUnitTest, ProcessCompressedApexRunsVerification) {
       built_in_dir.path));
 
   TemporaryDir decompression_dir, active_apex_dir;
-  std::vector<std::reference_wrapper<const ApexFile>> compressed_apex_list;
+  std::vector<ApexFileRef> compressed_apex_list;
   compressed_apex_list.emplace_back(std::cref(*compressed_apex_mismatch_key));
   auto return_value = ProcessCompressedApex(
       compressed_apex_list, decompression_dir.path, active_apex_dir.path);
@@ -363,7 +363,7 @@ void PrepareCompressedApex(const std::string& name,
   fs::copy(GetTestFile(name), built_in_dir);
   auto compressed_apex =
       ApexFile::Open(StringPrintf("%s/%s", built_in_dir.c_str(), name.c_str()));
-  std::vector<std::reference_wrapper<const ApexFile>> compressed_apex_list;
+  std::vector<ApexFileRef> compressed_apex_list;
   compressed_apex_list.emplace_back(std::cref(*compressed_apex));
   auto return_value =
       ProcessCompressedApex(compressed_apex_list, decompressed_dir, data_dir);
@@ -565,7 +565,9 @@ class ApexdMountTest : public ::testing::Test {
   ApexdMountTest() {
     built_in_dir_ = StringPrintf("%s/pre-installed-apex", td_.path);
     data_dir_ = StringPrintf("%s/data-apex", td_.path);
-    config = {kTestApexdStatusSysprop, data_dir_.c_str()};
+    hash_tree_dir_ = StringPrintf("%s/apex-hash-tree", td_.path);
+    config = {kTestApexdStatusSysprop, data_dir_.c_str(),
+              hash_tree_dir_.c_str()};
   }
 
   const std::string& GetBuiltInDir() { return built_in_dir_; }
@@ -593,6 +595,7 @@ class ApexdMountTest : public ::testing::Test {
     ASSERT_TRUE(IsOk(SetUpApexTestEnvironment()));
     ASSERT_EQ(mkdir(built_in_dir_.c_str(), 0755), 0);
     ASSERT_EQ(mkdir(data_dir_.c_str(), 0755), 0);
+    ASSERT_EQ(mkdir(hash_tree_dir_.c_str(), 0755), 0);
   }
 
   void TearDown() final {
@@ -608,6 +611,7 @@ class ApexdMountTest : public ::testing::Test {
   TemporaryDir td_;
   std::string built_in_dir_;
   std::string data_dir_;
+  std::string hash_tree_dir_;
   ApexdConfig config;
   std::vector<std::string> to_unmount_;
 };
@@ -1463,6 +1467,77 @@ TEST_F(ApexdMountTest, OnStartApexOnDataHasWrongKeyFallsBackToBuiltIn) {
                            ASSERT_TRUE(latest);
                            ASSERT_EQ(data.full_path, apex_path_1);
                          });
+}
+
+TEST_F(ApexdMountTest, UnmountAll) {
+  AddPreInstalledApex("apex.apexd_test.apex");
+  std::string apex_path_2 =
+      AddPreInstalledApex("apex.apexd_test_different_app.apex");
+  std::string apex_path_3 = AddDataApex("apex.apexd_test_v2.apex");
+
+  auto& instance = ApexFileRepository::GetInstance();
+  ASSERT_RESULT_OK(instance.AddPreInstalledApex({GetBuiltInDir()}));
+
+  ASSERT_TRUE(IsOk(ActivatePackage(apex_path_2)));
+  ASSERT_TRUE(IsOk(ActivatePackage(apex_path_3)));
+  UnmountOnTearDown(apex_path_2);
+  UnmountOnTearDown(apex_path_3);
+
+  auto apex_mounts = GetApexMounts();
+  ASSERT_THAT(apex_mounts,
+              UnorderedElementsAre("/apex/com.android.apex.test_package",
+                                   "/apex/com.android.apex.test_package@2",
+                                   "/apex/com.android.apex.test_package_2",
+                                   "/apex/com.android.apex.test_package_2@1"));
+
+  auto& db = GetApexDatabaseForTesting();
+  // UnmountAll expects apex database to empty, hence this reset.
+  db.Reset();
+
+  ASSERT_EQ(0, UnmountAll());
+
+  auto new_apex_mounts = GetApexMounts();
+  ASSERT_EQ(new_apex_mounts.size(), 0u);
+}
+
+TEST_F(ApexdMountTest, UnmountAllSharedLibsApex) {
+  ASSERT_EQ(mkdir("/apex/sharedlibs", 0755), 0);
+  ASSERT_EQ(mkdir("/apex/sharedlibs/lib", 0755), 0);
+  ASSERT_EQ(mkdir("/apex/sharedlibs/lib64", 0755), 0);
+  auto deleter = make_scope_guard([]() {
+    std::error_code ec;
+    fs::remove_all("/apex/sharedlibs", ec);
+    if (ec) {
+      LOG(ERROR) << "Failed to delete /apex/sharedlibs : " << ec;
+    }
+  });
+
+  std::string apex_path_1 = AddPreInstalledApex(
+      "com.android.apex.test.sharedlibs_generated.v1.libvX.apex");
+  std::string apex_path_2 =
+      AddDataApex("com.android.apex.test.sharedlibs_generated.v2.libvY.apex");
+
+  auto& instance = ApexFileRepository::GetInstance();
+  ASSERT_RESULT_OK(instance.AddPreInstalledApex({GetBuiltInDir()}));
+
+  ASSERT_TRUE(IsOk(ActivatePackage(apex_path_1)));
+  ASSERT_TRUE(IsOk(ActivatePackage(apex_path_2)));
+  UnmountOnTearDown(apex_path_1);
+  UnmountOnTearDown(apex_path_2);
+
+  auto apex_mounts = GetApexMounts();
+  ASSERT_THAT(apex_mounts,
+              UnorderedElementsAre("/apex/com.android.apex.test.sharedlibs@1",
+                                   "/apex/com.android.apex.test.sharedlibs@2"));
+
+  auto& db = GetApexDatabaseForTesting();
+  // UnmountAll expects apex database to empty, hence this reset.
+  db.Reset();
+
+  ASSERT_EQ(0, UnmountAll());
+
+  auto new_apex_mounts = GetApexMounts();
+  ASSERT_EQ(new_apex_mounts.size(), 0u);
 }
 
 }  // namespace apex

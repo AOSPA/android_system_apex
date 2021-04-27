@@ -41,11 +41,13 @@ namespace apex {
 struct ApexdConfig {
   const char* apex_status_sysprop;
   const char* active_apex_data_dir;
+  const char* apex_hash_tree_dir;
 };
 
 static constexpr const ApexdConfig kDefaultConfig = {
     kApexStatusSysprop,
     kActiveApexPackagesDataDir,
+    kApexHashTreeDir,
 };
 
 class CheckpointInterface;
@@ -129,13 +131,11 @@ void OnStart();
 // For every package X, there can be at most two APEX, pre-installed vs
 // installed on data. We decide which ones should be activated and return them
 // as a list
-std::vector<std::reference_wrapper<const ApexFile>> SelectApexForActivation(
-    const std::unordered_map<
-        std::string, std::vector<std::reference_wrapper<const ApexFile>>>&
-        all_apex,
+std::vector<ApexFileRef> SelectApexForActivation(
+    const std::unordered_map<std::string, std::vector<ApexFileRef>>& all_apex,
     const ApexFileRepository& instance);
 std::vector<ApexFile> ProcessCompressedApex(
-    const std::vector<std::reference_wrapper<const ApexFile>>& compressed_apex,
+    const std::vector<ApexFileRef>& compressed_apex,
     const std::string& decompression_dir = kApexDecompressedDir,
     const std::string& active_apex_dir = kActiveApexPackagesDataDir);
 // Notifies system that apexes are activated by setting apexd.status property to

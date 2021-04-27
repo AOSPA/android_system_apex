@@ -543,8 +543,9 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
 }
 
 std::string GetHashTreeFileName(const ApexFile& apex, bool is_new) {
+  const std::string& id = GetPackageId(apex.GetManifest());
   std::string ret =
-      std::string(kApexHashTreeDir) + "/" + GetPackageId(apex.GetManifest());
+      StringPrintf("%s/%s", gConfig->apex_hash_tree_dir, id.c_str());
   return is_new ? ret + ".new" : ret;
 }
 
@@ -1513,9 +1514,8 @@ std::vector<Result<void>> ActivateApexWorker(
   return ret;
 }
 
-Result<void> ActivateApexPackages(
-    const std::vector<std::reference_wrapper<const ApexFile>>& apexes,
-    bool is_ota_chroot) {
+Result<void> ActivateApexPackages(const std::vector<ApexFileRef>& apexes,
+                                  bool is_ota_chroot) {
   std::queue<const ApexFile*> apex_queue;
   std::mutex apex_queue_mutex;
 
@@ -1602,7 +1602,7 @@ Result<void> ScanPackagesDirAndActivate(const char* apex_package_dir) {
   if (!apexes.ok()) {
     return apexes.error();
   }
-  std::vector<std::reference_wrapper<const ApexFile>> apexes_ref;
+  std::vector<ApexFileRef> apexes_ref;
   std::transform(apexes->begin(), apexes->end(), std::back_inserter(apexes_ref),
                  [](const auto& x) { return std::cref(x); });
   return ActivateApexPackages(apexes_ref, /* is_ota_chroot= */ false);
@@ -2258,7 +2258,7 @@ int OnBootstrap() {
   }
 
   // Now activate bootstrap apexes.
-  std::vector<std::reference_wrapper<const ApexFile>> bootstrap_apexes_ref;
+  std::vector<ApexFileRef> bootstrap_apexes_ref;
   std::transform(bootstrap_apexes.begin(), bootstrap_apexes.end(),
                  std::back_inserter(bootstrap_apexes_ref),
                  [](const auto& x) { return std::cref(x); });
@@ -2313,7 +2313,8 @@ void Initialize(CheckpointInterface* checkpoint_service) {
                << status.error();
     return;
   }
-  gMountedApexes.PopulateFromMounts();
+  gMountedApexes.PopulateFromMounts(gConfig->active_apex_data_dir,
+                                    gConfig->apex_hash_tree_dir);
 }
 
 // Note: Pre-installed apex are initialized in Initialize(CheckpointInterface*)
@@ -2343,18 +2344,15 @@ void InitializeDataApex() {
  * @param all_apex all the APEX grouped by their package name
  * @return list of ApexFile that needs to be activated
  */
-std::vector<std::reference_wrapper<const ApexFile>> SelectApexForActivation(
-    const std::unordered_map<
-        std::string, std::vector<std::reference_wrapper<const ApexFile>>>&
-        all_apex,
+std::vector<ApexFileRef> SelectApexForActivation(
+    const std::unordered_map<std::string, std::vector<ApexFileRef>>& all_apex,
     const ApexFileRepository& instance) {
   LOG(INFO) << "Selecting APEX for activation";
-  std::vector<std::reference_wrapper<const ApexFile>> activation_list;
+  std::vector<ApexFileRef> activation_list;
   // For every package X, select which APEX to activate
   for (auto& apex_it : all_apex) {
     const std::string& package_name = apex_it.first;
-    const std::vector<std::reference_wrapper<const ApexFile>>& apex_files =
-        apex_it.second;
+    const std::vector<ApexFileRef>& apex_files = apex_it.second;
 
     if (apex_files.size() > 2 || apex_files.size() == 0) {
       LOG(FATAL) << "Unexpectedly found more than two versions or none for "
@@ -2383,7 +2381,7 @@ std::vector<std::reference_wrapper<const ApexFile>> SelectApexForActivation(
     // Given an APEX A and the version of the other APEX B, should we activate
     // it?
     auto select_apex = [&instance, &activation_list](
-                           const std::reference_wrapper<const ApexFile>& a_ref,
+                           const ApexFileRef& a_ref,
                            const int version_b) mutable {
       const ApexFile& a = a_ref.get();
       // APEX that provides shared library always gets activated
@@ -2418,7 +2416,7 @@ std::vector<std::reference_wrapper<const ApexFile>> SelectApexForActivation(
  * link it to kActiveApexPackagesDataDir. Returns list of decompressed APEX.
  */
 std::vector<ApexFile> ProcessCompressedApex(
-    const std::vector<std::reference_wrapper<const ApexFile>>& compressed_apex,
+    const std::vector<ApexFileRef>& compressed_apex,
     const std::string& decompression_dir, const std::string& active_apex_dir) {
   LOG(INFO) << "Processing compressed APEX";
 
@@ -2544,7 +2542,7 @@ void OnStart() {
   auto activation_list = SelectApexForActivation(all_apex, instance);
 
   // Process compressed APEX, if any
-  std::vector<std::reference_wrapper<const ApexFile>> compressed_apex;
+  std::vector<ApexFileRef> compressed_apex;
   for (auto it = activation_list.begin(); it != activation_list.end();) {
     if (it->get().IsCompressed()) {
       compressed_apex.emplace_back(*it);
@@ -2799,14 +2797,22 @@ void BootCompletedCleanup() {
 }
 
 int UnmountAll() {
-  gMountedApexes.PopulateFromMounts();
+  gMountedApexes.PopulateFromMounts(gConfig->active_apex_data_dir,
+                                    gConfig->apex_hash_tree_dir);
   int ret = 0;
   gMountedApexes.ForallMountedApexes([&](const std::string& /*package*/,
                                          const MountedApexData& data,
                                          bool latest) {
     LOG(INFO) << "Unmounting " << data.full_path << " mounted on "
               << data.mount_point;
-    if (latest) {
+    auto apex = ApexFile::Open(data.full_path);
+    if (!apex.ok()) {
+      LOG(ERROR) << "Failed to open " << data.full_path << " : "
+                 << apex.error();
+      ret = 1;
+      return;
+    }
+    if (latest && !apex->GetManifest().providesharedapexlibs()) {
       auto pos = data.mount_point.find('@');
       CHECK(pos != std::string::npos);
       std::string bind_mount = data.mount_point.substr(0, pos);

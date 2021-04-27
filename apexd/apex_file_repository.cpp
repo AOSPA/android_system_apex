@@ -63,15 +63,7 @@ Result<void> ApexFileRepository::ScanBuiltInDir(const std::string& dir) {
     if (it == pre_installed_store_.end()) {
       pre_installed_store_.emplace(name, std::move(*apex_file));
     } else if (it->second.GetPath() != apex_file->GetPath()) {
-      // Currently, on some -eng builds there are two art apexes on /system
-      // partition. While this issue is not fixed, exempt art apex from the
-      // duplicate check on -eng builds.
-      // TODO(b/176497601): remove this exemption once issue with duplicate art
-      // apex is resolved.
-      std::string build_type = GetProperty("ro.build.type", "");
-      auto level = build_type == "eng" && name == "com.android.art"
-                       ? base::ERROR
-                       : base::FATAL;
+      auto level = base::FATAL;
       // On some development (non-REL) builds the VNDK apex could be in /vendor.
       // When testing CTS-on-GSI on these builds, there would be two VNDK apexes
       // in the system, one in /system and one in /vendor.
@@ -229,18 +221,16 @@ bool ApexFileRepository::IsPreInstalledApex(const ApexFile& apex) const {
   return it->second.GetPath() == apex.GetPath() || IsDecompressedApex(apex);
 }
 
-std::vector<std::reference_wrapper<const ApexFile>>
-ApexFileRepository::GetPreInstalledApexFiles() const {
-  std::vector<std::reference_wrapper<const ApexFile>> result;
+std::vector<ApexFileRef> ApexFileRepository::GetPreInstalledApexFiles() const {
+  std::vector<ApexFileRef> result;
   for (const auto& it : pre_installed_store_) {
     result.emplace_back(std::cref(it.second));
   }
   return std::move(result);
 }
 
-std::vector<std::reference_wrapper<const ApexFile>>
-ApexFileRepository::GetDataApexFiles() const {
-  std::vector<std::reference_wrapper<const ApexFile>> result;
+std::vector<ApexFileRef> ApexFileRepository::GetDataApexFiles() const {
+  std::vector<ApexFileRef> result;
   for (const auto& it : data_store_) {
     result.emplace_back(std::cref(it.second));
   }
@@ -248,11 +238,10 @@ ApexFileRepository::GetDataApexFiles() const {
 }
 
 // Group pre-installed APEX and data APEX by name
-std::unordered_map<std::string,
-                   std::vector<std::reference_wrapper<const ApexFile>>>
+std::unordered_map<std::string, std::vector<ApexFileRef>>
 ApexFileRepository::AllApexFilesByName() const {
   // Collect all apex files
-  std::vector<std::reference_wrapper<const ApexFile>> all_apex_files;
+  std::vector<ApexFileRef> all_apex_files;
   auto pre_installed_apexs = GetPreInstalledApexFiles();
   auto data_apexs = GetDataApexFiles();
   std::move(pre_installed_apexs.begin(), pre_installed_apexs.end(),
@@ -261,15 +250,12 @@ ApexFileRepository::AllApexFilesByName() const {
             std::back_inserter(all_apex_files));
 
   // Group them by name
-  std::unordered_map<std::string,
-                     std::vector<std::reference_wrapper<const ApexFile>>>
-      result;
+  std::unordered_map<std::string, std::vector<ApexFileRef>> result;
   for (const auto& apex_file_ref : all_apex_files) {
     const ApexFile& apex_file = apex_file_ref.get();
     const std::string& package_name = apex_file.GetManifest().name();
     if (result.find(package_name) == result.end()) {
-      result[package_name] =
-          std::vector<std::reference_wrapper<const ApexFile>>{};
+      result[package_name] = std::vector<ApexFileRef>{};
     }
     result[package_name].emplace_back(apex_file_ref);
   }
@@ -277,7 +263,7 @@ ApexFileRepository::AllApexFilesByName() const {
   return std::move(result);
 }
 
-std::reference_wrapper<const ApexFile> ApexFileRepository::GetPreInstalledApex(
+ApexFileRef ApexFileRepository::GetPreInstalledApex(
     const std::string& name) const {
   auto it = pre_installed_store_.find(name);
   CHECK(it != pre_installed_store_.end());

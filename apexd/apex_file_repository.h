@@ -28,6 +28,8 @@
 namespace android {
 namespace apex {
 
+using ApexFileRef = std::reference_wrapper<const android::apex::ApexFile>;
+
 // This class serves as a ApexFile repository for all apexes on device. It also
 // provides information about the ApexFiles it hosts, such as which are
 // pre-installed and which are data. Such information can be used, for example,
@@ -90,22 +92,19 @@ class ApexFileRepository final {
   bool IsDecompressedApex(const ApexFile& apex) const;
 
   // Returns reference to all pre-installed APEX on device
-  std::vector<std::reference_wrapper<const ApexFile>> GetPreInstalledApexFiles()
-      const;
+  std::vector<ApexFileRef> GetPreInstalledApexFiles() const;
 
   // Returns reference to all data APEX on device
-  std::vector<std::reference_wrapper<const ApexFile>> GetDataApexFiles() const;
+  std::vector<ApexFileRef> GetDataApexFiles() const;
 
   // Group all ApexFiles on device by their package name
-  std::unordered_map<std::string,
-                     std::vector<std::reference_wrapper<const ApexFile>>>
-  AllApexFilesByName() const;
+  std::unordered_map<std::string, std::vector<ApexFileRef>> AllApexFilesByName()
+      const;
 
   // Returns a pre-installed version of apex with the given name. Caller is
   // expected to check if there is a pre-installed apex with the given name
   // using |HasPreinstalledVersion| function.
-  std::reference_wrapper<const ApexFile> GetPreInstalledApex(
-      const std::string& name) const;
+  ApexFileRef GetPreInstalledApex(const std::string& name) const;
 
   // Clears ApexFileRepostiry.
   // Only use in tests.
