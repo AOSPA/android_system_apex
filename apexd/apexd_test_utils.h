@@ -272,6 +272,9 @@ inline android::base::Result<void> SetUpApexTestEnvironment() {
 
   // Clean up in case previous test left directory behind.
   if (access(kApexMountForTest, F_OK) == 0) {
+    if (umount2(kApexMountForTest, MNT_FORCE | UMOUNT_NOFOLLOW) != 0) {
+      PLOG(WARNING) << "Failed to unmount " << kApexMountForTest;
+    }
     if (rmdir(kApexMountForTest) != 0) {
       return ErrnoError() << "Failed to rmdir " << kApexMountForTest;
     }

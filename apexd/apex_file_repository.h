@@ -108,9 +108,10 @@ class ApexFileRepository final {
 
   // Clears ApexFileRepostiry.
   // Only use in tests.
-  void Reset() {
+  void Reset(const std::string& decompression_dir = kApexDecompressedDir) {
     pre_installed_store_.clear();
     data_store_.clear();
+    decompression_dir_ = decompression_dir;
   }
 
  private:
@@ -127,7 +128,7 @@ class ApexFileRepository final {
   std::unordered_map<std::string, ApexFile> pre_installed_store_, data_store_;
   // Decompression directory which will be used to determine if apex is
   // decompressed or not
-  const std::string decompression_dir_;
+  std::string decompression_dir_;
 };
 
 }  // namespace apex

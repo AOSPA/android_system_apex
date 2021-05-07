@@ -53,6 +53,7 @@ Result<void> ApexFileRepository::ScanBuiltInDir(const std::string& dir) {
 
   // TODO(b/179248390): scan parallelly if possible
   for (const auto& file : *all_apex_files) {
+    LOG(INFO) << "Found pre-installed APEX " << file;
     Result<ApexFile> apex_file = ApexFile::Open(file);
     if (!apex_file.ok()) {
       return Error() << "Failed to open " << file << " : " << apex_file.error();
@@ -118,6 +119,7 @@ Result<void> ApexFileRepository::AddDataApex(const std::string& data_dir) {
 
   // TODO(b/179248390): scan parallelly if possible
   for (const auto& file : *all_apex_files) {
+    LOG(INFO) << "Found updated apex " << file;
     Result<ApexFile> apex_file = ApexFile::Open(file);
     if (!apex_file.ok()) {
       LOG(ERROR) << "Failed to open " << file << " : " << apex_file.error();
@@ -137,6 +139,28 @@ Result<void> ApexFileRepository::AddDataApex(const std::string& data_dir) {
       LOG(ERROR) << "Skipping " << file
                  << " : public key doesn't match pre-installed one";
       continue;
+    }
+
+    if (IsDecompressedApex(*apex_file)) {
+      // Decompressed apex is invalid if apex on system in not compressed
+      ApexFileRef pre_installed_apex = GetPreInstalledApex(name);
+      if (!pre_installed_apex.get().IsCompressed()) {
+        LOG(ERROR) << "Skipping " << file
+                   << " : Decompressed APEX on data is missing its compressed"
+                   << " pre-installed APEX counterpart on system";
+        continue;
+      }
+      // Verify that apex_file has same version as pre_installed_apex, otherwise
+      // it's an invalid decompressed apex
+      // TODO(b/185708645): Comparing version to determine equivalence is
+      // brittle.
+      if (apex_file->GetManifest().version() !=
+          pre_installed_apex.get().GetManifest().version()) {
+        LOG(ERROR) << "Skipping " << file
+                   << " : Decompressed APEX has different version than"
+                   << " pre-installed APEX";
+        continue;
+      }
     }
 
     auto it = data_store_.find(name);

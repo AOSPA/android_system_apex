@@ -212,6 +212,7 @@ java_test_host {
         ":com.android.apex.compressed.v1",
         ":com.android.apex.compressed.v1_original",
         ":com.android.apex.compressed.v2",
+        ":gen_manifest_mismatch_compressed_apex_v2",
         ":apex_compression_tests_app",
     ],
 }

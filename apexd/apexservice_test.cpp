@@ -1159,7 +1159,8 @@ TEST_F(ApexServiceActivationSuccessTest, ShowsUpInMountedApexDatabase) {
       << GetDebugStr(installer_.get());
 
   MountedApexDatabase db;
-  db.PopulateFromMounts(kActiveApexPackagesDataDir, kApexHashTreeDir);
+  db.PopulateFromMounts(kActiveApexPackagesDataDir, kApexDecompressedDir,
+                        kApexHashTreeDir);
 
   std::optional<MountedApexData> mounted_apex;
   db.ForallMountedApexes(installer_->package,
@@ -1285,7 +1286,8 @@ TEST_F(ApexServiceNoHashtreeApexActivationTest, ShowsUpInMountedApexDatabase) {
       << GetDebugStr(installer_.get());
 
   MountedApexDatabase db;
-  db.PopulateFromMounts(kActiveApexPackagesDataDir, kApexHashTreeDir);
+  db.PopulateFromMounts(kActiveApexPackagesDataDir, kApexDecompressedDir,
+                        kApexHashTreeDir);
 
   std::optional<MountedApexData> mounted_apex;
   db.ForallMountedApexes(installer_->package,
@@ -2668,21 +2670,6 @@ TEST_F(ApexShimUpdateTest, UpdateToV2Success) {
   }
 
   ASSERT_TRUE(IsOk(service_->stagePackages({installer.test_file})));
-}
-
-TEST_F(ApexShimUpdateTest, UpdateToV2FailureWrongSHA512) {
-  PrepareTestApexForInstall installer(
-      GetTestFile("com.android.apex.cts.shim.v2_wrong_sha.apex"));
-
-  if (!installer.Prepare()) {
-    FAIL() << GetDebugStr(&installer);
-  }
-
-  const auto& status = service_->stagePackages({installer.test_file});
-  ASSERT_FALSE(IsOk(status));
-  const std::string& error_message =
-      std::string(status.exceptionMessage().c_str());
-  ASSERT_THAT(error_message, HasSubstr("has unexpected SHA512 hash"));
 }
 
 TEST_F(ApexShimUpdateTest, SubmitStagedSessionFailureHasPreInstallHook) {

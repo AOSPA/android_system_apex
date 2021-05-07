@@ -130,6 +130,7 @@ bool IsActiveMountPoint(const std::string& mount_point) {
 
 Result<void> PopulateLoopInfo(const BlockDevice& top_device,
                               const std::string& active_apex_dir,
+                              const std::string& decompression_dir,
                               const std::string& apex_hash_tree_dir,
                               MountedApexData* apex_data) {
   std::vector<BlockDevice> slaves = top_device.GetSlaves();
@@ -152,13 +153,17 @@ Result<void> PopulateLoopInfo(const BlockDevice& top_device,
   // Enforce following invariant:
   //  * slaves[0] always represents a data loop device
   //  * if size = 2 then slaves[1] represents an external hashtree loop device
+  auto is_data_loop_device = [&](const std::string& backing_file) {
+    return StartsWith(backing_file, active_apex_dir) ||
+           StartsWith(backing_file, decompression_dir);
+  };
   if (slaves.size() == 2) {
-    if (!StartsWith(backing_files[0], active_apex_dir)) {
+    if (!is_data_loop_device(backing_files[0])) {
       std::swap(slaves[0], slaves[1]);
       std::swap(backing_files[0], backing_files[1]);
     }
   }
-  if (!StartsWith(backing_files[0], active_apex_dir)) {
+  if (!is_data_loop_device(backing_files[0])) {
     return Error() << "Data loop device " << slaves[0].DevPath()
                    << " has unexpected backing file " << backing_files[0];
   }
@@ -195,7 +200,8 @@ void NormalizeIfDeleted(MountedApexData* apex_data) {
 
 Result<MountedApexData> ResolveMountInfo(
     const BlockDevice& block, const std::string& mount_point,
-    const std::string& active_apex_dir, const std::string& apex_hash_tree_dir) {
+    const std::string& active_apex_dir, const std::string& decompression_dir,
+    const std::string& apex_hash_tree_dir) {
   bool temp_mount = EndsWith(mount_point, ".tmp");
   // Now, see if it is dm-verity or loop mounted
   switch (block.GetType()) {
@@ -220,8 +226,8 @@ Result<MountedApexData> ResolveMountInfo(
       result.mount_point = mount_point;
       result.device_name = *name;
       result.is_temp_mount = temp_mount;
-      auto status =
-          PopulateLoopInfo(block, active_apex_dir, apex_hash_tree_dir, &result);
+      auto status = PopulateLoopInfo(block, active_apex_dir, decompression_dir,
+                                     apex_hash_tree_dir, &result);
       if (!status.ok()) {
         return status.error();
       }
@@ -258,8 +264,8 @@ Result<MountedApexData> ResolveMountInfo(
 // Apexd serves the correct package list even on the devices
 // which are not ro.apex.updatable.
 void MountedApexDatabase::PopulateFromMounts(
-    const std::string& active_apex_dir, const std::string& apex_hash_tree_dir)
-    REQUIRES(!mounted_apexes_mutex_) {
+    const std::string& active_apex_dir, const std::string& decompression_dir,
+    const std::string& apex_hash_tree_dir) REQUIRES(!mounted_apexes_mutex_) {
   LOG(INFO) << "Populating APEX database from mounts...";
 
   std::unordered_map<std::string, int> active_versions;
@@ -277,8 +283,9 @@ void MountedApexDatabase::PopulateFromMounts(
       continue;
     }
 
-    auto mount_data = ResolveMountInfo(BlockDevice(block), mount_point,
-                                       active_apex_dir, apex_hash_tree_dir);
+    auto mount_data =
+        ResolveMountInfo(BlockDevice(block), mount_point, active_apex_dir,
+                         decompression_dir, apex_hash_tree_dir);
     if (!mount_data.ok()) {
       LOG(WARNING) << "Can't resolve mount info " << mount_data.error();
       continue;
