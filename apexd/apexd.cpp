@@ -76,6 +76,7 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -2347,7 +2348,8 @@ void Initialize(CheckpointInterface* checkpoint_service) {
 //  ApexFileRepository can act as cache and re-scanning is not expensive
 void InitializeDataApex() {
   ApexFileRepository& instance = ApexFileRepository::GetInstance();
-  Result<void> status = instance.AddDataApex(kActiveApexPackagesDataDir);
+  Result<void> status =
+      instance.AddDataApex(kActiveApexPackagesDataDir, kApexDecompressedDir);
   if (!status.ok()) {
     LOG(ERROR) << "Failed to collect data APEX files : " << status.error();
     return;
@@ -2437,9 +2439,8 @@ std::vector<ApexFileRef> SelectApexForActivation(
 }
 
 /**
- * For each compressed APEX, decompress it to kApexDecompressedDir. If we
- * are decompressing during boot then hard link it to |active_apex_data_dir|
- * and return the hardlinked apex, other return the decompressed APEX.
+ * For each compressed APEX, decompress it to kApexDecompressedDir
+ * and return the decompressed APEX.
  *
  * Returns list of decompressed APEX.
  */
@@ -2471,34 +2472,34 @@ std::vector<ApexFile> ProcessCompressedApex(
     const auto dest_path_decompressed = StringPrintf(
         "%s/%s%s", gConfig->decompression_dir,
         GetPackageId(apex_file.GetManifest()).c_str(), suffix_to_use);
-    // If we are decompressing during boot, then we hardlink it to
-    // active apex directory and return that ApexFile
-    const auto return_apex_file_path =
-        is_ota_chroot
-            ? dest_path_decompressed
-            : StringPrintf("%s/%s%s", gConfig->active_apex_data_dir,
-                           GetPackageId(apex_file.GetManifest()).c_str(),
-                           suffix_to_use);
 
     cleanup.push_back(dest_path_decompressed);
-    cleanup.push_back(return_apex_file_path);
 
     // Decompress only if path doesn't exist. Otherwise reuse existing
     // decompressed APEX
     auto decompressed_path_exists = PathExists(dest_path_decompressed);
-    // TODO(b/185886528): Stop hardlinking to /data/apex/active
-    auto return_file_exists = PathExists(return_apex_file_path);
-    if (!decompressed_path_exists.ok() || !*decompressed_path_exists ||
-        !return_file_exists.ok() || !*return_file_exists) {
-      // Clean up before attempting to decompress
-      RemoveFileIfExists(dest_path_decompressed);
-      RemoveFileIfExists(return_apex_file_path);
-
-      auto result = apex_file.Decompress(dest_path_decompressed);
-      if (!result.ok()) {
-        LOG(ERROR) << "Failed to decompress : " << apex_file.GetPath().c_str()
-                   << " " << result.error();
-        continue;
+    if (!decompressed_path_exists.ok() || !*decompressed_path_exists) {
+      // Try to avoid decompression if there is an ota_apex ready to be reused
+      // and we are not booting from chroot
+      auto ota_apex_path = StringPrintf(
+          "%s/%s%s", gConfig->decompression_dir,
+          GetPackageId(apex_file.GetManifest()).c_str(), kOtaApexPackageSuffix);
+      auto ota_path_exists = PathExists(ota_apex_path);
+      if (!is_ota_chroot && ota_path_exists.ok() && *ota_path_exists) {
+        LOG(INFO) << "Renaming " << ota_apex_path << " to "
+                  << dest_path_decompressed;
+        if (rename(ota_apex_path.c_str(), dest_path_decompressed.c_str()) !=
+            0) {
+          PLOG(ERROR) << "Failed to rename file " << ota_apex_path;
+          continue;
+        }
+      } else {
+        auto result = apex_file.Decompress(dest_path_decompressed);
+        if (!result.ok()) {
+          LOG(ERROR) << "Failed to decompress : " << apex_file.GetPath().c_str()
+                     << " " << result.error();
+          continue;
+        }
       }
 
       // Fix label of decompressed file
@@ -2507,34 +2508,22 @@ std::vector<ApexFile> ProcessCompressedApex(
         LOG(ERROR) << restore.error();
         continue;
       }
-
-      // TODO(b/185886528): Stop hardlinking to /data/apex/active
-      if (!is_ota_chroot) {
-        // Hardlink to kActiveApexPackagesDataDir so that they get activated on
-        // reboot
-        if (link(dest_path_decompressed.c_str(),
-                 return_apex_file_path.c_str()) != 0) {
-          LOG(ERROR) << "Failed to link decompressed APEX "
-                     << dest_path_decompressed << " to "
-                     << return_apex_file_path;
-          continue;
-        }
-      }
     } else {
       LOG(INFO) << "Skipping decompression for " << apex_file.GetPath();
     }
 
-    // Post decompression verification
-    auto return_apex = ApexFile::Open(return_apex_file_path);
+    // Post decompression validation
+    auto return_apex = ApexFile::Open(dest_path_decompressed);
     if (!return_apex.ok()) {
       LOG(ERROR) << "Failed to open decompressed APEX : "
-                 << return_apex_file_path << " " << return_apex.error();
+                 << dest_path_decompressed << " " << return_apex.error();
       continue;
     }
-    if (apex_file.GetBundledPublicKey() != return_apex->GetBundledPublicKey()) {
-      LOG(ERROR) << "Public key of compressed APEX is different than original "
-                    "APEX for "
-                 << return_apex->GetPath();
+    auto validation_result =
+        ValidateDecompressedApex(apex_file, std::cref(*return_apex));
+    if (!validation_result.ok()) {
+      LOG(ERROR) << "Validation failed for decompressed APEX "
+                 << dest_path_decompressed << " " << validation_result.error();
       continue;
     }
 
@@ -2543,6 +2532,23 @@ std::vector<ApexFile> ProcessCompressedApex(
     decompressed_apex_list.emplace_back(std::move(*return_apex));
   }
   return std::move(decompressed_apex_list);
+}
+
+Result<void> ValidateDecompressedApex(const ApexFile& capex,
+                                      const ApexFile& apex) {
+  if (capex.GetBundledPublicKey() != apex.GetBundledPublicKey()) {
+    return Error()
+           << "Public key of compressed APEX is different than original "
+              "APEX for "
+           << apex.GetPath();
+  }
+  if (capex.GetManifest().version() != apex.GetManifest().version()) {
+    return Error()
+           << "Compressed APEX has different version than decompressed APEX"
+           << apex.GetPath();
+  }
+
+  return {};
 }
 
 void OnStart() {
@@ -2578,7 +2584,7 @@ void OnStart() {
   // them to /data/apex/active first.
   ScanStagedSessionsDirAndStage();
   if (auto status = ApexFileRepository::GetInstance().AddDataApex(
-          gConfig->active_apex_data_dir);
+          gConfig->active_apex_data_dir, gConfig->decompression_dir);
       !status.ok()) {
     LOG(ERROR) << "Failed to collect data APEX files : " << status.error();
   }
@@ -2788,18 +2794,31 @@ Result<void> MarkStagedSessionSuccessful(const int session_id) {
   }
 }
 
-namespace {
-
 // Removes APEXes on /data that have not been activated
 void RemoveInactiveDataApex() {
-  auto data_apexes =
-      FindFilesBySuffix(kActiveApexPackagesDataDir, {kApexPackageSuffix});
-  if (!data_apexes.ok()) {
-    LOG(ERROR) << "Failed to scan " << kActiveApexPackagesDataDir << " : "
-               << data_apexes.error();
-    return;
+  std::vector<std::string> all_apex_files;
+  Result<std::vector<std::string>> active_apex =
+      FindFilesBySuffix(gConfig->active_apex_data_dir, {kApexPackageSuffix});
+  if (!active_apex.ok()) {
+    LOG(ERROR) << "Failed to scan " << gConfig->active_apex_data_dir << " : "
+               << active_apex.error();
+  } else {
+    all_apex_files.insert(all_apex_files.end(),
+                          std::make_move_iterator(active_apex->begin()),
+                          std::make_move_iterator(active_apex->end()));
   }
-  for (const auto& path : *data_apexes) {
+  Result<std::vector<std::string>> decompressed_apex = FindFilesBySuffix(
+      gConfig->decompression_dir, {kDecompressedApexPackageSuffix});
+  if (!decompressed_apex.ok()) {
+    LOG(ERROR) << "Failed to scan " << gConfig->decompression_dir << " : "
+               << decompressed_apex.error();
+  } else {
+    all_apex_files.insert(all_apex_files.end(),
+                          std::make_move_iterator(decompressed_apex->begin()),
+                          std::make_move_iterator(decompressed_apex->end()));
+  }
+
+  for (const auto& path : all_apex_files) {
     if (!apexd_private::IsMounted(path)) {
       LOG(INFO) << "Removing inactive data APEX " << path;
       if (unlink(path.c_str()) != 0) {
@@ -2809,45 +2828,8 @@ void RemoveInactiveDataApex() {
   }
 }
 
-}  // namespace
-
-// Decompressed APEX in |decompression_dir| that are no longer linked to
-// |apex_active_dir| should be removed
-void RemoveUnlinkedDecompressedApex(
-    const std::string& decompression_dir = kApexDecompressedDir,
-    const std::string& apex_active_dir = kActiveApexPackagesDataDir) {
-  auto decompressed_files = ReadDir(decompression_dir, [](auto _) {
-    (void)_;
-    return true;
-  });
-  if (!decompressed_files.ok()) {
-    return;
-  }
-
-  namespace fs = std::filesystem;
-  for (const std::string& decompressed_file : *decompressed_files) {
-    // Check if this file is still hard linked to one of the files in
-    // apex_active_dir
-    const std::string filename = fs::path(decompressed_file).filename();
-    const std::string active_copy_path =
-        StringPrintf("%s/%s", apex_active_dir.c_str(), filename.c_str());
-    std::error_code ec;
-    const bool hard_link_exists =
-        fs::equivalent(decompressed_file, active_copy_path, ec);
-    if (ec || !hard_link_exists) {
-      LOG(INFO) << "Cleaning up unused decompressed APEX file: "
-                << decompressed_file;
-      if (unlink(decompressed_file.c_str()) != 0) {
-        PLOG(ERROR) << "Failed to delete unused decompressed APEX file: "
-                    << decompressed_file;
-      }
-    }
-  }
-}
-
 void BootCompletedCleanup() {
   RemoveInactiveDataApex();
-  RemoveUnlinkedDecompressedApex();
   ApexSession::DeleteFinalizedSessions();
 }
 
@@ -3037,7 +3019,8 @@ int OnOtaChrootBootstrap() {
                << Join(gConfig->apex_built_in_dirs, ',');
     return 1;
   }
-  if (auto status = instance.AddDataApex(gConfig->active_apex_data_dir);
+  if (auto status = instance.AddDataApex(gConfig->active_apex_data_dir,
+                                         gConfig->decompression_dir);
       !status.ok()) {
     LOG(ERROR) << "Failed to scan upgraded apexes from "
                << gConfig->active_apex_data_dir;
@@ -3121,6 +3104,90 @@ int OnOtaChrootBootstrap() {
     return 1;
   }
 
+  fd.reset();
+
+  if (auto status = RestoreconPath(file_name); !status.ok()) {
+    LOG(ERROR) << "Failed to restorecon " << file_name << " : "
+               << status.error();
+    return 1;
+  }
+
+  return 0;
+}
+
+int OnOtaChrootBootstrapFlattenedApex() {
+  LOG(INFO) << "OnOtaChrootBootstrapFlattenedApex";
+
+  std::vector<com::android::apex::ApexInfo> apex_infos;
+
+  for (const std::string& dir : gConfig->apex_built_in_dirs) {
+    LOG(INFO) << "Scanning " << dir;
+    auto dir_content = ReadDir(dir, [](const auto& entry) {
+      std::error_code ec;
+      return entry.is_directory(ec);
+    });
+
+    if (!dir_content.ok()) {
+      LOG(ERROR) << "Failed to scan " << dir << " : " << dir_content.error();
+      continue;
+    }
+
+    // Sort to make sure that /apex/apex-info-list.xml generation doesn't depend
+    // on the unstable directory scan.
+    std::vector<std::string> entries = std::move(*dir_content);
+    std::sort(entries.begin(), entries.end());
+
+    for (const std::string& apex_dir : entries) {
+      std::string manifest_file = apex_dir + "/" + kManifestFilenamePb;
+      if (access(manifest_file.c_str(), F_OK) != 0) {
+        PLOG(ERROR) << "Failed to access " << manifest_file;
+        continue;
+      }
+
+      auto manifest = ReadManifest(manifest_file);
+      if (!manifest.ok()) {
+        LOG(ERROR) << "Failed to read apex manifest from " << manifest_file
+                   << " : " << manifest.error();
+        continue;
+      }
+
+      std::string mount_point = std::string(kApexRoot) + "/" + manifest->name();
+      if (mkdir(mount_point.c_str(), 0755) != 0) {
+        PLOG(ERROR) << "Failed to mkdir " << mount_point;
+        continue;
+      }
+
+      LOG(INFO) << "Bind mounting " << apex_dir << " onto " << mount_point;
+      if (mount(apex_dir.c_str(), mount_point.c_str(), nullptr, MS_BIND,
+                nullptr) != 0) {
+        PLOG(ERROR) << "Failed to bind mount " << apex_dir << " to "
+                    << mount_point;
+        continue;
+      }
+
+      apex_infos.emplace_back(manifest->name(), /* modulePath= */ apex_dir,
+                              /* preinstalledModulePath= */ apex_dir,
+                              /* versionCode= */ manifest->version(),
+                              /* versionName= */ manifest->versionname(),
+                              /* isFactory= */ true, /* isActive= */ true);
+    }
+  }
+
+  std::string file_name = StringPrintf("%s/%s", kApexRoot, kApexInfoList);
+  unique_fd fd(TEMP_FAILURE_RETRY(
+      open(file_name.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)));
+  if (fd.get() == -1) {
+    PLOG(ERROR) << "Can't open " << file_name;
+    return 1;
+  }
+
+  std::ostringstream xml;
+  com::android::apex::ApexInfoList apex_info_list(apex_infos);
+  com::android::apex::write(xml, apex_info_list);
+  if (!android::base::WriteStringToFd(xml.str(), fd)) {
+    PLOG(ERROR) << "Can't write to " << file_name;
+    return 1;
+  }
   fd.reset();
 
   if (auto status = RestoreconPath(file_name); !status.ok()) {

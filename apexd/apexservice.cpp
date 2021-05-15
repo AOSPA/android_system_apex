@@ -103,7 +103,8 @@ class ApexService : public BnApexService {
   BinderStatus remountPackages() override;
   BinderStatus recollectPreinstalledData(
       const std::vector<std::string>& paths) override;
-  BinderStatus recollectDataApex(const std::string& path) override;
+  BinderStatus recollectDataApex(const std::string& path,
+                                 const std::string& decompression_dir) override;
   BinderStatus markBootCompleted() override;
   BinderStatus calculateSizeForCompressedApex(
       const CompressedApexInfoList& compressed_apex_info_list,
@@ -625,8 +626,10 @@ BinderStatus ApexService::recollectPreinstalledData(
   return BinderStatus::ok();
 }
 
-BinderStatus ApexService::recollectDataApex(const std::string& path) {
-  LOG(DEBUG) << "recollectDataApex() received by ApexService, paths " << path;
+BinderStatus ApexService::recollectDataApex(
+    const std::string& path, const std::string& decompression_dir) {
+  LOG(DEBUG) << "recollectDataApex() received by ApexService, paths " << path
+             << " and " << decompression_dir;
   if (auto debug = CheckDebuggable("recollectDataApex"); !debug.isOk()) {
     return debug;
   }
@@ -634,7 +637,7 @@ BinderStatus ApexService::recollectDataApex(const std::string& path) {
     return root;
   }
   ApexFileRepository& instance = ApexFileRepository::GetInstance();
-  if (auto res = instance.AddDataApex(path); !res.ok()) {
+  if (auto res = instance.AddDataApex(path, decompression_dir); !res.ok()) {
     return BinderStatus::fromExceptionCode(
         BinderStatus::EX_SERVICE_SPECIFIC,
         String8(res.error().message().c_str()));
@@ -1020,7 +1023,7 @@ void CreateAndRegisterService() {
   sp<ProcessState> ps(ProcessState::self());
 
   // Create binder service and register with LazyServiceRegistrar
-  sp<ApexService> apex_service = new ApexService();
+  sp<ApexService> apex_service = sp<ApexService>::make();
   auto lazy_registrar = LazyServiceRegistrar::getInstance();
   lazy_registrar.forcePersist(true);
   lazy_registrar.registerService(apex_service, kApexServiceName);

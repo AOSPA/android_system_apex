@@ -483,10 +483,6 @@ def CreateApex(args, work_dir):
     else:
       key_name = os.path.basename(os.path.splitext(args.key)[0])
 
-    if manifest_apex.name != key_name:
-      print("package name '" + manifest_apex.name +
-            "' does not match with key name '" + key_name + "'")
-      return False
     img_file = os.path.join(content_dir, 'apex_payload.img')
 
     if args.payload_fs_type == 'ext4':

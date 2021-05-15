@@ -65,4 +65,15 @@ message ApexManifest {
   // causes libraries contained in the APEX to be made available under
   // /apex/sharedlibs .
   bool provideSharedApexLibs = 11;
+
+  message CompressedApexMetadata {
+
+    // Valid only for compressed APEX. This field contains the root digest of
+    // the original_apex contained inside CAPEX.
+    string originalApexDigest = 1;
+  }
+
+  // Exists only for compressed APEX
+  CompressedApexMetadata capexMetadata = 12;
 }
+

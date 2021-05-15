@@ -21,6 +21,10 @@
         <option name="cleanup-apks" value="true" />
         <option name="test-file-name" value="apex_compression_tests_app.apk" />
     </target_preparer>
+    <target_preparer class="com.android.tradefed.targetprep.RunCommandTargetPreparer">
+        <option name="run-command" value="setprop persist.rollback.is_test 1" />
+        <option name="teardown-command" value="setprop persist.rollback.is_test 0" />
+    </target_preparer>
     <test class="com.android.tradefed.testtype.HostTest" >
         <option name="class"
                 value="com.android.tests.apex.host.ApexCompressionTests" />

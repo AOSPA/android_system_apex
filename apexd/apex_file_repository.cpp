@@ -32,8 +32,8 @@
 
 using android::base::Error;
 using android::base::GetProperty;
+using android::base::Join;
 using android::base::Result;
-using android::base::StringPrintf;
 
 namespace android {
 namespace apex {
@@ -104,21 +104,33 @@ android::base::Result<void> ApexFileRepository::AddPreInstalledApex(
 
 // TODO(b/179497746): AddDataApex should not concern with filtering out invalid
 //   apex.
-Result<void> ApexFileRepository::AddDataApex(const std::string& data_dir) {
-  LOG(INFO) << "Scanning " << data_dir << " for data ApexFiles";
+Result<void> ApexFileRepository::AddDataApex(
+    const std::string& data_dir, const std::string& decompression_dir) {
+  LOG(INFO) << "Scanning " << Join(data_dir, decompression_dir)
+            << " for data ApexFiles";
   if (access(data_dir.c_str(), F_OK) != 0 && errno == ENOENT) {
     LOG(WARNING) << data_dir << " does not exist. Skipping";
     return {};
   }
 
-  Result<std::vector<std::string>> all_apex_files =
+  Result<std::vector<std::string>> active_apex =
       FindFilesBySuffix(data_dir, {kApexPackageSuffix});
-  if (!all_apex_files.ok()) {
-    return all_apex_files.error();
+  if (!active_apex.ok()) {
+    return active_apex.error();
   }
+  Result<std::vector<std::string>> decompressed_apex =
+      FindFilesBySuffix(decompression_dir, {kDecompressedApexPackageSuffix});
+  if (!decompressed_apex.ok()) {
+    return decompressed_apex.error();
+  }
+  std::vector<std::string> all_apex_files;
+  all_apex_files.insert(all_apex_files.end(), active_apex->begin(),
+                        active_apex->end());
+  all_apex_files.insert(all_apex_files.end(), decompressed_apex->begin(),
+                        decompressed_apex->end());
 
   // TODO(b/179248390): scan parallelly if possible
-  for (const auto& file : *all_apex_files) {
+  for (const auto& file : all_apex_files) {
     LOG(INFO) << "Found updated apex " << file;
     Result<ApexFile> apex_file = ApexFile::Open(file);
     if (!apex_file.ok()) {
@@ -224,17 +236,10 @@ bool ApexFileRepository::HasDataVersion(const std::string& name) const {
   return data_store_.find(name) != data_store_.end();
 }
 
-// ApexFile is considered a decompressed APEX if it is a hard link of file in
-// |decompression_dir_| with same filename
+// ApexFile is considered a decompressed APEX if it is located in decompression
+// dir
 bool ApexFileRepository::IsDecompressedApex(const ApexFile& apex) const {
-  namespace fs = std::filesystem;
-  const std::string filename = fs::path(apex.GetPath()).filename();
-  const std::string decompressed_path =
-      StringPrintf("%s/%s", decompression_dir_.c_str(), filename.c_str());
-
-  std::error_code ec;
-  bool hard_link_exists = fs::equivalent(decompressed_path, apex.GetPath(), ec);
-  return !ec && hard_link_exists;
+  return apex.GetPath().starts_with(decompression_dir_);
 }
 
 bool ApexFileRepository::IsPreInstalledApex(const ApexFile& apex) const {

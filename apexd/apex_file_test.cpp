@@ -314,6 +314,23 @@ TEST(ApexFileTest, CompressedSharedLibsApexIsRejected) {
                                    "be compressed"));
 }
 
+// Check if CAPEX contains originalApexDigest in its manifest
+TEST(ApexFileTest, OriginalApexDigest) {
+  const std::string capex_path =
+      kTestDataDir + "com.android.apex.compressed.v1.capex";
+  auto capex = ApexFile::Open(capex_path);
+  ASSERT_TRUE(capex.ok());
+  const std::string decompressed_apex_path =
+      kTestDataDir + "com.android.apex.compressed.v1_original.apex";
+  auto decompressed_apex = ApexFile::Open(decompressed_apex_path);
+  ASSERT_TRUE(decompressed_apex.ok());
+  // Validate root digest
+  auto digest = decompressed_apex->VerifyApexVerity(
+      decompressed_apex->GetBundledPublicKey());
+  ASSERT_TRUE(digest.ok());
+  ASSERT_EQ(digest->root_digest,
+            capex->GetManifest().capexmetadata().originalapexdigest());
+}
 }  // namespace
 }  // namespace apex
 }  // namespace android

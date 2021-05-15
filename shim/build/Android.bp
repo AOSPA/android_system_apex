@@ -40,6 +40,27 @@ apex_key {
 }
 
 genrule {
+  name: "com.android.apex.cts.shim.debug.pem",
+  out: ["com.android.apex.cts.shim.debug.pem"],
+  cmd: "openssl genrsa -out $(out) 4096",
+}
+
+genrule {
+  name: "com.android.apex.cts.shim.debug.pubkey",
+  srcs: [":com.android.apex.cts.shim.debug.pem"],
+  out: ["com.android.apex.cts.shim.debug.pubkey"],
+  tools: ["avbtool"],
+  cmd: "$(location avbtool) extract_public_key --key $(in) --output $(out)",
+}
+
+apex_key {
+  name: "com.android.apex.cts.shim.debug.key",
+  private_key: ":com.android.apex.cts.shim.debug.pem",
+  public_key: ":com.android.apex.cts.shim.debug.pubkey",
+  installable: false,
+}
+
+genrule {
   name: "generate_hash_of_dev_null",
   out: ["hash.txt"],
   cmd: "sha512sum -b /dev/null | cut -d' ' -f1 | tee $(out)",
@@ -73,6 +94,18 @@ apex {
   key: "com.android.apex.cts.shim.key",
   prebuilts: ["hash_of_dev_null"],
   apps: ["CtsShim", "CtsShimPriv"],
+  installable: false,
+  allowed_files: "default_shim_allowed_list.txt",
+  updatable: false,
+}
+
+apex {
+  name: "com.android.apex.cts.shim.v2_sign_payload_with_different_key",
+  manifest: "manifest_v2.json",
+  androidManifest: "AndroidManifest.xml",
+  file_contexts: ":apex.test-file_contexts",
+  key: "com.android.apex.cts.shim.debug.key",
+  prebuilts: ["hash_of_dev_null"],
   installable: false,
   allowed_files: "default_shim_allowed_list.txt",
   updatable: false,

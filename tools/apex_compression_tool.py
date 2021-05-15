@@ -31,6 +31,8 @@ import sys
 import tempfile
 from zipfile import ZipFile
 
+import apex_manifest_pb2
+
 tool_path_list = None
 
 
@@ -107,12 +109,41 @@ def RunCompress(args, work_dir):
         cmd.extend(['-C', extract_dir])
         cmd.extend(['-f', file_path])
         cmd.extend(['-s', meta_file])
+    # Extract the image for retrieving root digest
+    zip_obj.extract('apex_payload.img', path= work_dir)
+    image_path = os.path.join(work_dir, 'apex_payload.img')
+
+  # Set digest of original_apex to apex_manifest.pb
+  apex_manifest_path = os.path.join(extract_dir, 'apex_manifest.pb')
+  assert AddOriginalApexDigestToManifest(apex_manifest_path, image_path)
 
   # Don't forget to compress
   cmd.extend(['-L', '9'])
 
   RunCommand(cmd, verbose=True)
 
+  return True
+
+
+def AddOriginalApexDigestToManifest(capex_manifest_path, apex_image_path):
+  # Retrieve the root digest of the image
+  avbtool_cmd = [
+        'avbtool',
+        'print_partition_digests', '--image',
+        apex_image_path]
+  # avbtool_cmd output has format "<name>: <value>"
+  root_digest = RunCommand(avbtool_cmd, True)[0].decode().split(': ')[1].strip()
+  # Update the manifest proto file
+  with open(capex_manifest_path, 'rb') as f:
+    pb = apex_manifest_pb2.ApexManifest()
+    pb.ParseFromString(f.read())
+  # Populate CompressedApexMetadata
+  capex_metadata = apex_manifest_pb2.ApexManifest().CompressedApexMetadata()
+  capex_metadata.originalApexDigest = root_digest
+  # Set updated value to protobuf
+  pb.capexMetadata.CopyFrom(capex_metadata)
+  with open(capex_manifest_path, 'wb') as f:
+    f.write(pb.SerializeToString())
   return True
 
 

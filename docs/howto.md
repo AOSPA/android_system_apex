@@ -256,7 +256,7 @@ can be set in three ways.
     `build/target/product/security/testkey`
 *   `<name>`: the APEX is signed with the certificate named `<name>` in the same
     directory as `PRODUCT_DEFAULT_DEV_CERTIFICATE`
-*   `:&lt;name>`: the APEX signed with the certificate which is defined by a
+*   `<name>`: the APEX signed with the certificate which is defined by a
     Soong module named `<name>`. The certificate module can be defined as
     follows.
 
