@@ -88,4 +88,32 @@ public class ApexCompressionTests {
     public void testUnusedDecompressedApexIsCleanedUp_SameVersion() throws Exception {
         Install.single(UNCOMPRESSED_APEX_V1).setStaged().commit();
     }
+
+
+    @Test
+    public void testCapexToApexSwitch() throws Exception {
+        // Only retrieve active apex package
+        PackageInfo pi = mPm.getPackageInfo(
+                COMPRESSED_APEX_PACKAGE_NAME, PackageManager.MATCH_APEX);
+        assertThat(pi).isNotNull();
+        assertThat(pi.isApex).isTrue();
+        assertThat(pi.packageName).isEqualTo(COMPRESSED_APEX_PACKAGE_NAME);
+        assertThat(pi.getLongVersionCode()).isEqualTo(1);
+        boolean isFactoryPackage = (pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        assertThat(isFactoryPackage).isTrue();
+        assertThat(pi.applicationInfo.sourceDir).startsWith("/system/apex");
+    }
+
+    @Test
+    public void testDecompressedApexVersionAlwaysHasSameVersionAsCapex() throws Exception {
+        // Only retrieve active apex package
+        PackageInfo pi = mPm.getPackageInfo(
+                COMPRESSED_APEX_PACKAGE_NAME, PackageManager.MATCH_APEX);
+        assertThat(pi).isNotNull();
+        assertThat(pi.isApex).isTrue();
+        assertThat(pi.packageName).isEqualTo(COMPRESSED_APEX_PACKAGE_NAME);
+        assertThat(pi.getLongVersionCode()).isEqualTo(1);
+        boolean isFactoryPackage = (pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        assertThat(isFactoryPackage).isTrue();
+    }
 }

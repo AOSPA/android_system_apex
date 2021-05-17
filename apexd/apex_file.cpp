@@ -404,6 +404,8 @@ Result<ApexVerityData> ApexFile::VerifyApexVerity(
 Result<void> ApexFile::Decompress(const std::string& dest_path) const {
   const std::string& src_path = GetPath();
 
+  LOG(INFO) << "Decompressing" << src_path << " to " << dest_path;
+
   // We should decompress compressed APEX files only
   if (!IsCompressed()) {
     return ErrnoError() << "Cannot decompress an uncompressed APEX";

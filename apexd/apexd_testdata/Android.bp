@@ -97,6 +97,22 @@ genrule {
        "-o $(genDir)/com.android.apex.compressed_key_mismatch_with_original.capex",
 }
 
+genrule {
+  // Generates an apex which has a different manifest outside the filesystem
+  // image.
+  name: "gen_manifest_mismatch_compressed_apex_v2",
+  out: ["com.android.apex.compressed.v2_manifest_mismatch.apex"],
+  srcs: [":com.android.apex.compressed.v2_original"],
+  tools: ["soong_zip", "zipalign", "conv_apex_manifest"],
+  cmd: "unzip -q $(in) -d $(genDir) && " +
+       "$(location conv_apex_manifest) setprop version 137 $(genDir)/apex_manifest.pb && " +
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) " +
+       "-s apex_manifest.pb -s apex_payload.img -s apex_pubkey " +
+       "-o $(genDir)/unaligned.apex && " +
+       "$(location zipalign) -f 4096 $(genDir)/unaligned.apex " +
+       "$(genDir)/com.android.apex.compressed.v2_manifest_mismatch.apex"
+}
+
 apex {
     name: "com.android.apex.compressed.v1_original",
     manifest: "manifest_compressed.json",

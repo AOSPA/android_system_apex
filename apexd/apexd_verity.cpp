@@ -29,6 +29,7 @@
 #include "apex_file.h"
 #include "apexd_utils.h"
 
+using android::base::Dirname;
 using android::base::ErrnoError;
 using android::base::Error;
 using android::base::ReadFully;
@@ -158,7 +159,7 @@ Result<PrepareHashTreeResult> PrepareHashTree(
     return Error() << "Cannot prepare HashTree of compressed APEX";
   }
 
-  if (auto st = CreateDirIfNeeded(kApexHashTreeDir, 0700); !st.ok()) {
+  if (auto st = CreateDirIfNeeded(Dirname(hashtree_file), 0700); !st.ok()) {
     return st.error();
   }
   bool should_regenerate_hashtree = false;
