@@ -32,7 +32,6 @@
 
 using android::base::Error;
 using android::base::GetProperty;
-using android::base::Join;
 using android::base::Result;
 
 namespace android {
@@ -106,7 +105,7 @@ android::base::Result<void> ApexFileRepository::AddPreInstalledApex(
 //   apex.
 Result<void> ApexFileRepository::AddDataApex(
     const std::string& data_dir, const std::string& decompression_dir) {
-  LOG(INFO) << "Scanning " << Join(data_dir, decompression_dir)
+  LOG(INFO) << "Scanning " << data_dir << " and " << decompression_dir
             << " for data ApexFiles";
   if (access(data_dir.c_str(), F_OK) != 0 && errno == ENOENT) {
     LOG(WARNING) << data_dir << " does not exist. Skipping";
@@ -173,6 +172,12 @@ Result<void> ApexFileRepository::AddDataApex(
                    << " pre-installed APEX";
         continue;
       }
+    } else if (android::base::EndsWith(apex_file->GetPath(),
+                                       kDecompressedApexPackageSuffix)) {
+      LOG(WARNING) << "Skipping " << file
+                   << " : Non-decompressed APEX should not have "
+                   << kDecompressedApexPackageSuffix << " suffix";
+      continue;
     }
 
     auto it = data_store_.find(name);

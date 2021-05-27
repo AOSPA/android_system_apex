@@ -310,7 +310,7 @@ TEST(ApexFileRepositoryTest, AddAndGetDataApex) {
   PrepareCompressedApex("com.android.apex.compressed.v1.capex",
                         built_in_dir.path, decompression_dir.path);
 
-  ApexFileRepository instance;
+  ApexFileRepository instance(decompression_dir.path);
   ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
   ASSERT_TRUE(
       IsOk(instance.AddDataApex(data_dir.path, decompression_dir.path)));
@@ -332,14 +332,22 @@ TEST(ApexFileRepositoryTest, AddDataApexMatchesSuffixForDecompressedApex) {
   fs::copy(GetTestFile("com.android.apex.compressed.v1.capex"),
            built_in_dir.path);
 
-  ApexFileRepository instance;
+  ApexFileRepository instance(decompression_dir.path);
   ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({built_in_dir.path})));
-  // Add decompressed apex with ".apex" suffix. This should not be added as data
-  // apex
-  auto normal_apex_path = StringPrintf("%s/com.android.apex.compressed@1.apex",
-                                       decompression_dir.path);
+
+  // - Files with ".apex" suffix should be ignored when found in
+  // /data/apex/decompressed
+  // - Files with ".decompressed.apex" suffix should be ignored when found in
+  // /data/apex/active.
+  auto normal_apex_in_decompression_dir = StringPrintf(
+      "%s/com.android.apex.compressed@1.apex", decompression_dir.path);
   fs::copy(GetTestFile("com.android.apex.compressed.v1_original.apex"),
-           normal_apex_path);
+           normal_apex_in_decompression_dir);
+  auto decompressed_apex_in_active_dir =
+      StringPrintf("%s/com.android.apex.compressed@1%s", data_dir.path,
+                   kDecompressedApexPackageSuffix);
+  fs::copy(GetTestFile("com.android.apex.compressed.v1_original.apex"),
+           decompressed_apex_in_active_dir);
   ASSERT_TRUE(
       IsOk(instance.AddDataApex(data_dir.path, decompression_dir.path)));
 
