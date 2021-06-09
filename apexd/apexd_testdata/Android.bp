@@ -65,6 +65,19 @@ genrule {
        "-o $(genDir)/com.android.apex.compressed.v1_without_apex.capex"
 }
 
+
+genrule {
+  // Generates a compressed apex which has different version of original_apex in it
+  name: "gen_capex_with_v2_apex",
+  out: ["com.android.apex.compressed.v1_with_v2_apex.capex"],
+  srcs: [":com.android.apex.compressed.v2"],
+  tools: ["soong_zip", "conv_apex_manifest"],
+  cmd: "unzip -q $(in) -d $(genDir) && " +
+       "$(location conv_apex_manifest) setprop version 1 $(genDir)/apex_manifest.pb && " +
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) -L 9 " +
+       "-o $(genDir)/com.android.apex.compressed.v1_with_v2_apex.capex"
+}
+
 genrule {
   // Generates a capex which has same module name as com.android.apex.compressed, but
   // is contains a different public key.

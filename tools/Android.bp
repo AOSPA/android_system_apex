@@ -52,6 +52,13 @@ python_binary_host {
             embedded_launcher: true,
         },
     },
+    libs: [
+        "apex_manifest_proto",
+    ],
+    required: [
+        "avbtool",
+        "conv_apex_manifest",
+    ],
 }
 
 python_test_host {
@@ -71,9 +78,14 @@ python_test_host {
             enabled: true,
         },
     },
+    libs: [
+        "apex_manifest_proto",
+    ],
     test_suites: ["general-tests"],
     required: [
-        "apex_compression_tool",
-        "deapexer",
+      "avbtool",
+      "apex_compression_tool",
+      "conv_apex_manifest",
+      "deapexer",
     ],
 }

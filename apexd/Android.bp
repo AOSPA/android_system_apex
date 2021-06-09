@@ -16,7 +16,7 @@ tidy_errors = [
   "bugprone-terminating-continue",
   "bugprone-undefined-memory-manipulation",
   "bugprone-undelegated-constructor",
-  "bugprone-unhandled-self-assignment",
+  // "bugprone-unhandled-self-assignment", // found in apex_manifest.proto
   "bugprone-unused-raii",
   "cert-err34-c",
   "google-default-arguments",
@@ -193,6 +193,9 @@ cc_library_static {
   srcs: ["apexservice.cpp"],
   static_libs: [
     "libapexd",
+  ],
+  cflags: [
+    "-DANDROID_UTILS_REF_BASE_DISABLE_IMPLICIT_CONSTRUCTION",
   ],
 }
 
@@ -402,6 +405,7 @@ cc_test {
     ":gen_corrupt_superblock_apex",
     ":gen_corrupt_apex",
     ":gen_capex_without_apex",
+    ":gen_capex_with_v2_apex",
     ":gen_key_mismatch_with_original_capex",
     ":com.android.apex.cts.shim.v1_prebuilt",
     ":com.android.apex.cts.shim.v2_prebuilt",

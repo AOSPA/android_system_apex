@@ -23,11 +23,14 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.rollback.RollbackInfo;
 
 import androidx.test.InstrumentationRegistry;
 
 import com.android.cts.install.lib.Install;
+import com.android.cts.install.lib.InstallUtils;
 import com.android.cts.install.lib.TestApp;
+import com.android.cts.rollback.lib.RollbackUtils;
 
 import org.junit.After;
 import org.junit.Before;
@@ -55,7 +58,8 @@ public class ApexCompressionTests {
                 .getUiAutomation()
                 .adoptShellPermissionIdentity(
                         Manifest.permission.INSTALL_PACKAGES,
-                        Manifest.permission.DELETE_PACKAGES);
+                        Manifest.permission.DELETE_PACKAGES,
+                        Manifest.permission.TEST_MANAGE_ROLLBACKS);
     }
 
     @After
@@ -115,5 +119,46 @@ public class ApexCompressionTests {
         assertThat(pi.getLongVersionCode()).isEqualTo(1);
         boolean isFactoryPackage = (pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
         assertThat(isFactoryPackage).isTrue();
+    }
+
+    @Test
+    public void testCompressedApexCanBeRolledBack_Commit() throws Exception {
+        // Verify before updating
+        PackageInfo pi = mPm.getPackageInfo(
+                COMPRESSED_APEX_PACKAGE_NAME, PackageManager.MATCH_APEX);
+        assertThat(pi.getLongVersionCode()).isEqualTo(1);
+        boolean isFactoryPackage = (pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        assertThat(isFactoryPackage).isTrue();
+        assertThat(pi.applicationInfo.sourceDir).startsWith("/data/apex/decompressed/");
+
+        Install.single(UNCOMPRESSED_APEX_V2).setStaged().setEnableRollback().commit();
+    }
+
+    @Test
+    public void testCompressedApexCanBeRolledBack_Rollback() throws Exception {
+        // Verify before rollback
+        PackageInfo pi = mPm.getPackageInfo(
+                COMPRESSED_APEX_PACKAGE_NAME, PackageManager.MATCH_APEX);
+        assertThat(pi.getLongVersionCode()).isEqualTo(2);
+        boolean isFactoryPackage = (pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        assertThat(isFactoryPackage).isFalse();
+        assertThat(pi.applicationInfo.sourceDir).startsWith("/data/apex/active/");
+
+        // Trigger rollback
+        RollbackInfo available = RollbackUtils.getAvailableRollback(COMPRESSED_APEX_PACKAGE_NAME);
+        RollbackUtils.rollback(available.getRollbackId(), UNCOMPRESSED_APEX_V2);
+        RollbackInfo committed = RollbackUtils.getCommittedRollbackById(available.getRollbackId());
+        InstallUtils.waitForSessionReady(committed.getCommittedSessionId());
+    }
+
+    @Test
+    public void testCompressedApexCanBeRolledBack_Verify() throws Exception {
+        // Verify rollback worked
+        PackageInfo pi = mPm.getPackageInfo(
+                COMPRESSED_APEX_PACKAGE_NAME, PackageManager.MATCH_APEX);
+        assertThat(pi.getLongVersionCode()).isEqualTo(1);
+        boolean isFactoryPackage = (pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        assertThat(isFactoryPackage).isFalse();
+        assertThat(pi.applicationInfo.sourceDir).startsWith("/data/apex/active/");
     }
 }

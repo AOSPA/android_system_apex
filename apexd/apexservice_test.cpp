@@ -3017,7 +3017,8 @@ class ApexServiceTestForCompressedApex : public ApexServiceTest {
         GetTestFile("com.android.apex.compressed.v1.capex"), kTempPrebuiltDir,
         kApexDecompressedDir, kActiveApexPackagesDataDir);
     service_->recollectPreinstalledData({kTempPrebuiltDir});
-    service_->recollectDataApex(kActiveApexPackagesDataDir);
+    service_->recollectDataApex(kActiveApexPackagesDataDir,
+                                kApexDecompressedDir);
   }
 
   void TearDown() override {

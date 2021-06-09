@@ -221,7 +221,7 @@ android_test_helper_app {
     name: "apex_compression_tests_app",
     manifest: "app/AndroidManifest.xml",
     srcs: ["app/src/**/*.java"],
-    static_libs: ["androidx.test.rules", "cts-install-lib", "testng"],
+    static_libs: ["androidx.test.rules", "cts-install-lib", "cts-rollback-lib", "testng"],
     test_suites: ["general-tests"],
     java_resources: [
         ":com.android.apex.compressed.v1_original",

@@ -64,7 +64,8 @@ class ApexFileRepository final {
   // Note: this call is **not thread safe** and is expected to be performed in a
   // single thread during initialization of apexd. After initialization is
   // finished, all queries to the instance are thread safe.
-  android::base::Result<void> AddDataApex(const std::string& data_dir);
+  android::base::Result<void> AddDataApex(const std::string& data_dir,
+                                          const std::string& decompression_dir);
 
   // Returns trusted public key for an apex with the given |name|.
   android::base::Result<const std::string> GetPublicKey(
