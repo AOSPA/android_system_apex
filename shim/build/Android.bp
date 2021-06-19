@@ -324,6 +324,7 @@ apex_key {
 apex {
   name: "com.android.apex.cts.shim_not_pre_installed",
   manifest: "manifest_not_pre_installed.json",
+  androidManifest: "AndroidManifestNotPreInstalled.xml",
   file_contexts: ":apex.test-file_contexts",
   key: "com.android.apex.cts.shim_not_pre_installed.key",
   prebuilts: ["hash_of_dev_null"],

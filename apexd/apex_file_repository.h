@@ -64,8 +64,7 @@ class ApexFileRepository final {
   // Note: this call is **not thread safe** and is expected to be performed in a
   // single thread during initialization of apexd. After initialization is
   // finished, all queries to the instance are thread safe.
-  android::base::Result<void> AddDataApex(const std::string& data_dir,
-                                          const std::string& decompression_dir);
+  android::base::Result<void> AddDataApex(const std::string& data_dir);
 
   // Returns trusted public key for an apex with the given |name|.
   android::base::Result<const std::string> GetPublicKey(
@@ -106,6 +105,10 @@ class ApexFileRepository final {
   // expected to check if there is a pre-installed apex with the given name
   // using |HasPreinstalledVersion| function.
   ApexFileRef GetPreInstalledApex(const std::string& name) const;
+  // Returns a data version of apex with the given name. Caller is
+  // expected to check if there is a data apex with the given name
+  // using |HasDataVersion| function.
+  ApexFileRef GetDataApex(const std::string& name) const;
 
   // Clears ApexFileRepostiry.
   // Only use in tests.

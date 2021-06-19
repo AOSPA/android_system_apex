@@ -229,6 +229,15 @@ def RunList(args):
 
 
 def RunExtract(args):
+  if GetType(args.apex) == ApexType.COMPRESSED:
+    with tempfile.TemporaryDirectory() as temp:
+      decompressed_apex = os.path.join(temp, "temp.apex")
+      decompress(args.apex, decompressed_apex)
+      args.apex = decompressed_apex
+
+      RunExtract(args)
+      return
+
   with Apex(args) as apex:
     if not os.path.exists(args.dest):
       os.makedirs(args.dest, mode=0o755)
@@ -278,12 +287,12 @@ def RunDecompress(args):
   Args:
       args.input: file path to compressed APEX
       args.output: file path to where decompressed APEX will be placed
-  Returns:
-      True if decompression was executed successfully, otherwise False
   """
   compressed_apex_fp = args.input
   decompressed_apex_fp = args.output
+  return decompress(compressed_apex_fp, decompressed_apex_fp)
 
+def decompress(compressed_apex_fp, decompressed_apex_fp):
   if os.path.exists(decompressed_apex_fp):
     print("Output path '" + decompressed_apex_fp + "' already exists")
     sys.exit(1)

@@ -152,4 +152,11 @@ interface IApexService {
    * reservation fails. If empty list is passed, then reserved space is deallocated.
    */
    void reserveSpaceForCompressedApex(in CompressedApexInfoList compressed_apex_info_list);
+
+   /**
+    * Performs a non-staged install of the given APEX.
+    * Note: don't confuse this to preInstall and postInstall binder calls which are only used to
+    * test corresponding features of APEX packages.
+    */
+   ApexInfo installAndActivatePackage(in @utf8InCpp String packagePath);
 }

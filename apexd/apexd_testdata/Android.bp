@@ -54,6 +54,17 @@ apex {
     updatable: false,
 }
 
+apex {
+    name: "com.android.apex.compressed.v1_different_digest",
+    manifest: "manifest_compressed.json",
+    file_contexts: ":apex.test-file_contexts",
+    prebuilts: ["hash_of_dev_null"],
+    key: "com.android.apex.compressed.key",
+    installable: false,
+    test_only_force_compression: true,
+    updatable: false,
+}
+
 genrule {
   // Generates a compressed apex which doesn't have an original_apex file in it
   name: "gen_capex_without_apex",
@@ -65,7 +76,6 @@ genrule {
        "-o $(genDir)/com.android.apex.compressed.v1_without_apex.capex"
 }
 
-
 genrule {
   // Generates a compressed apex which has different version of original_apex in it
   name: "gen_capex_with_v2_apex",
@@ -76,6 +86,17 @@ genrule {
        "$(location conv_apex_manifest) setprop version 1 $(genDir)/apex_manifest.pb && " +
        "$(location soong_zip) -d -C $(genDir) -D $(genDir) -L 9 " +
        "-o $(genDir)/com.android.apex.compressed.v1_with_v2_apex.capex"
+}
+
+genrule {
+  // Generates a compressed apex which can be opened but not decompressed
+  name: "gen_capex_not_decompressible",
+  out: ["com.android.apex.compressed.v1_not_decompressible.capex"],
+  srcs: [":com.android.apex.compressed.v1"],
+  tools: ["soong_zip", "conv_apex_manifest"],
+  cmd: "unzip -q $(in) -d $(genDir) && echo '' > $(genDir)/original_apex && " +
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) -L 9 " +
+       "-o $(genDir)/com.android.apex.compressed.v1_not_decompressible.capex"
 }
 
 genrule {
@@ -131,6 +152,17 @@ apex {
     manifest: "manifest_compressed.json",
     file_contexts: ":apex.test-file_contexts",
     prebuilts: ["sample_prebuilt_file"],
+    key: "com.android.apex.compressed.key",
+    installable: false,
+    compressible: false,
+    updatable: false,
+}
+
+apex {
+    name: "com.android.apex.compressed.v1_different_digest_original",
+    manifest: "manifest_compressed.json",
+    file_contexts: ":apex.test-file_contexts",
+    prebuilts: ["hash_of_dev_null"],
     key: "com.android.apex.compressed.key",
     installable: false,
     compressible: false,

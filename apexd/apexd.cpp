@@ -576,6 +576,8 @@ Result<MountedApexData> VerifyAndTempMountPackage(
   return ret;
 }
 
+}  // namespace
+
 Result<void> Unmount(const MountedApexData& data) {
   LOG(DEBUG) << "Unmounting " << data.full_path << " from mount point "
              << data.mount_point;
@@ -611,6 +613,8 @@ Result<void> Unmount(const MountedApexData& data) {
 
   return {};
 }
+
+namespace {
 
 template <typename VerifyFn>
 Result<void> RunVerifyFnInsideTempMount(const ApexFile& apex,
@@ -2348,8 +2352,7 @@ void Initialize(CheckpointInterface* checkpoint_service) {
 //  ApexFileRepository can act as cache and re-scanning is not expensive
 void InitializeDataApex() {
   ApexFileRepository& instance = ApexFileRepository::GetInstance();
-  Result<void> status =
-      instance.AddDataApex(kActiveApexPackagesDataDir, kApexDecompressedDir);
+  Result<void> status = instance.AddDataApex(kActiveApexPackagesDataDir);
   if (!status.ok()) {
     LOG(ERROR) << "Failed to collect data APEX files : " << status.error();
     return;
@@ -2420,11 +2423,8 @@ std::vector<ApexFileRef> SelectApexForActivation(
       const bool same_version_priority_to_data =
           a.GetManifest().version() == version_b &&
           !instance.IsPreInstalledApex(a);
-      // If A has same version as B and they are both pre-installed,
-      // then it means one of them is compressed. Choose decompressed copy.
-      const bool decompressed = instance.IsDecompressedApex(a);
       if (provides_shared_apex_libs || higher_version ||
-          same_version_priority_to_data || decompressed) {
+          same_version_priority_to_data) {
         LOG(DEBUG) << "Selecting between two APEX: " << a.GetManifest().name()
                    << " " << a.GetPath();
         activation_list.emplace_back(a_ref);
@@ -2438,6 +2438,133 @@ std::vector<ApexFileRef> SelectApexForActivation(
   return activation_list;
 }
 
+namespace {
+
+Result<ApexFile> OpenAndValidateDecompressedApex(const ApexFile& capex,
+                                                 const std::string& apex_path) {
+  auto apex = ApexFile::Open(apex_path);
+  if (!apex.ok()) {
+    return Error() << "Failed to open decompressed APEX: " << apex.error();
+  }
+  auto result = ValidateDecompressedApex(capex, *apex);
+  if (!result.ok()) {
+    return result.error();
+  }
+  return std::move(*apex);
+}
+
+// Process a single compressed APEX. Returns the decompressed APEX if
+// successful.
+Result<ApexFile> ProcessCompressedApex(const ApexFile& capex,
+                                       bool is_ota_chroot) {
+  LOG(INFO) << "Processing compressed APEX " << capex.GetPath();
+  const auto decompressed_apex_path =
+      StringPrintf("%s/%s%s", gConfig->decompression_dir,
+                   GetPackageId(capex.GetManifest()).c_str(),
+                   kDecompressedApexPackageSuffix);
+  // Check if decompressed APEX already exist
+  auto decompressed_path_exists = PathExists(decompressed_apex_path);
+  if (decompressed_path_exists.ok() && *decompressed_path_exists) {
+    // Check if existing decompressed APEX is valid
+    auto result =
+        OpenAndValidateDecompressedApex(capex, decompressed_apex_path);
+    if (result.ok()) {
+      LOG(INFO) << "Skipping decompression for " << capex.GetPath();
+      return result;
+    }
+    // Do not delete existing decompressed APEX when is_ota_chroot is true
+    if (!is_ota_chroot) {
+      // Existing decompressed APEX is not valid. We will have to redecompress
+      LOG(WARNING) << "Existing decompressed APEX is invalid: "
+                   << result.error();
+      RemoveFileIfExists(decompressed_apex_path);
+    }
+  }
+
+  // We can also reuse existing OTA APEX, depending on situation
+  auto ota_apex_path = StringPrintf("%s/%s%s", gConfig->decompression_dir,
+                                    GetPackageId(capex.GetManifest()).c_str(),
+                                    kOtaApexPackageSuffix);
+  auto ota_path_exists = PathExists(ota_apex_path);
+  if (ota_path_exists.ok() && *ota_path_exists) {
+    if (is_ota_chroot) {
+      // During ota_chroot, we try to reuse ota APEX as is
+      auto result = OpenAndValidateDecompressedApex(capex, ota_apex_path);
+      if (result.ok()) {
+        LOG(INFO) << "Skipping decompression for " << ota_apex_path;
+        return result;
+      }
+      // Existing ota_apex is not valid. We will have to decompress
+      LOG(WARNING) << "Existing decompressed OTA APEX is invalid: "
+                   << result.error();
+      RemoveFileIfExists(ota_apex_path);
+    } else {
+      // During boot, we can avoid decompression by renaming OTA apex
+      // to expected decompressed_apex path
+
+      // Check if ota_apex APEX is valid
+      auto result = OpenAndValidateDecompressedApex(capex, ota_apex_path);
+      if (result.ok()) {
+        // ota_apex matches with capex. Slot has been switched.
+
+        // Rename ota_apex to expected decompressed_apex path
+        if (rename(ota_apex_path.c_str(), decompressed_apex_path.c_str()) ==
+            0) {
+          // Check if renamed decompressed APEX is valid
+          result =
+              OpenAndValidateDecompressedApex(capex, decompressed_apex_path);
+          if (result.ok()) {
+            LOG(INFO) << "Renamed " << ota_apex_path << " to "
+                      << decompressed_apex_path;
+            return result;
+          }
+          // Renamed ota_apex is not valid. We will have to decompress
+          LOG(WARNING) << "Renamed decompressed APEX from " << ota_apex_path
+                       << " to " << decompressed_apex_path
+                       << " is invalid: " << result.error();
+          RemoveFileIfExists(decompressed_apex_path);
+        } else {
+          PLOG(ERROR) << "Failed to rename file " << ota_apex_path;
+        }
+      }
+    }
+  }
+
+  // There was no way to avoid decompression
+
+  // Clean up reserved space before decompressing capex
+  if (auto ret = DeleteDirContent(gConfig->ota_reserved_dir); !ret.ok()) {
+    LOG(ERROR) << "Failed to clean up reserved space: " << ret.error();
+  }
+
+  auto decompression_dest =
+      is_ota_chroot ? ota_apex_path : decompressed_apex_path;
+  auto scope_guard = android::base::make_scope_guard(
+      [&]() { RemoveFileIfExists(decompression_dest); });
+
+  auto decompression_result = capex.Decompress(decompression_dest);
+  if (!decompression_result.ok()) {
+    return Error() << "Failed to decompress : " << capex.GetPath().c_str()
+                   << " " << decompression_result.error();
+  }
+
+  // Fix label of decompressed file
+  auto restore = RestoreconPath(decompression_dest);
+  if (!restore.ok()) {
+    return restore.error();
+  }
+
+  // Validate the newly decompressed APEX
+  auto return_apex = OpenAndValidateDecompressedApex(capex, decompression_dest);
+  if (!return_apex.ok()) {
+    return Error() << "Failed to decompress CAPEX: " << return_apex.error();
+  }
+
+  scope_guard.Disable();
+  return return_apex;
+}
+}  // namespace
+
 /**
  * For each compressed APEX, decompress it to kApexDecompressedDir
  * and return the decompressed APEX.
@@ -2448,106 +2575,46 @@ std::vector<ApexFile> ProcessCompressedApex(
     const std::vector<ApexFileRef>& compressed_apex, bool is_ota_chroot) {
   LOG(INFO) << "Processing compressed APEX";
 
-  // Clean up reserved space before decompressing capex
-  if (auto ret = DeleteDirContent(gConfig->ota_reserved_dir); !ret.ok()) {
-    LOG(ERROR) << "Failed to clean up reserved space: " << ret.error();
-  }
-
   std::vector<ApexFile> decompressed_apex_list;
-  for (const ApexFile& apex_file : compressed_apex) {
-    if (!apex_file.IsCompressed()) {
-      continue;
-    }
-    LOG(INFO) << "Processing compressed APEX " << apex_file.GetPath();
-    // Files to clean up if processing fails for any reason
-    std::vector<std::string> cleanup;
-    auto scope_guard = android::base::make_scope_guard([&cleanup] {
-      for (const auto& file_path : cleanup) {
-        RemoveFileIfExists(file_path);
-      }
-    });
-
-    const auto suffix_to_use =
-        is_ota_chroot ? kOtaApexPackageSuffix : kDecompressedApexPackageSuffix;
-    const auto dest_path_decompressed = StringPrintf(
-        "%s/%s%s", gConfig->decompression_dir,
-        GetPackageId(apex_file.GetManifest()).c_str(), suffix_to_use);
-
-    cleanup.push_back(dest_path_decompressed);
-
-    // Decompress only if path doesn't exist. Otherwise reuse existing
-    // decompressed APEX
-    auto decompressed_path_exists = PathExists(dest_path_decompressed);
-    if (!decompressed_path_exists.ok() || !*decompressed_path_exists) {
-      // Try to avoid decompression if there is an ota_apex ready to be reused
-      // and we are not booting from chroot
-      auto ota_apex_path = StringPrintf(
-          "%s/%s%s", gConfig->decompression_dir,
-          GetPackageId(apex_file.GetManifest()).c_str(), kOtaApexPackageSuffix);
-      auto ota_path_exists = PathExists(ota_apex_path);
-      if (!is_ota_chroot && ota_path_exists.ok() && *ota_path_exists) {
-        LOG(INFO) << "Renaming " << ota_apex_path << " to "
-                  << dest_path_decompressed;
-        if (rename(ota_apex_path.c_str(), dest_path_decompressed.c_str()) !=
-            0) {
-          PLOG(ERROR) << "Failed to rename file " << ota_apex_path;
-          continue;
-        }
-      } else {
-        auto result = apex_file.Decompress(dest_path_decompressed);
-        if (!result.ok()) {
-          LOG(ERROR) << "Failed to decompress : " << apex_file.GetPath().c_str()
-                     << " " << result.error();
-          continue;
-        }
-      }
-
-      // Fix label of decompressed file
-      auto restore = RestoreconPath(dest_path_decompressed);
-      if (!restore.ok()) {
-        LOG(ERROR) << restore.error();
-        continue;
-      }
-    } else {
-      LOG(INFO) << "Skipping decompression for " << apex_file.GetPath();
-    }
-
-    // Post decompression validation
-    auto return_apex = ApexFile::Open(dest_path_decompressed);
-    if (!return_apex.ok()) {
-      LOG(ERROR) << "Failed to open decompressed APEX : "
-                 << dest_path_decompressed << " " << return_apex.error();
-      continue;
-    }
-    auto validation_result =
-        ValidateDecompressedApex(apex_file, std::cref(*return_apex));
-    if (!validation_result.ok()) {
-      LOG(ERROR) << "Validation failed for decompressed APEX "
-                 << dest_path_decompressed << " " << validation_result.error();
+  for (const ApexFile& capex : compressed_apex) {
+    if (!capex.IsCompressed()) {
       continue;
     }
 
-    // Decompressed APEX has been successfully processed. Accept it.
-    scope_guard.Disable();
-    decompressed_apex_list.emplace_back(std::move(*return_apex));
+    auto decompressed_apex = ProcessCompressedApex(capex, is_ota_chroot);
+    if (decompressed_apex.ok()) {
+      decompressed_apex_list.emplace_back(std::move(*decompressed_apex));
+      continue;
+    }
+    LOG(ERROR) << "Failed to process compressed APEX: "
+               << decompressed_apex.error();
   }
   return std::move(decompressed_apex_list);
 }
 
 Result<void> ValidateDecompressedApex(const ApexFile& capex,
                                       const ApexFile& apex) {
+  // Decompressed APEX must have same public key as CAPEX
   if (capex.GetBundledPublicKey() != apex.GetBundledPublicKey()) {
     return Error()
            << "Public key of compressed APEX is different than original "
-              "APEX for "
-           << apex.GetPath();
+           << "APEX for " << apex.GetPath();
   }
+  // Decompressed APEX must have same version as CAPEX
   if (capex.GetManifest().version() != apex.GetManifest().version()) {
     return Error()
-           << "Compressed APEX has different version than decompressed APEX"
+           << "Compressed APEX has different version than decompressed APEX "
            << apex.GetPath();
   }
-
+  // Decompressed APEX must have same root digest as what is stored in CAPEX
+  auto apex_verity = apex.VerifyApexVerity(apex.GetBundledPublicKey());
+  if (!apex_verity.ok() ||
+      capex.GetManifest().capexmetadata().originalapexdigest() !=
+          apex_verity->root_digest) {
+    return Error() << "Root digest of " << apex.GetPath()
+                   << " does not match with"
+                   << " expected root digest in " << capex.GetPath();
+  }
   return {};
 }
 
@@ -2584,7 +2651,7 @@ void OnStart() {
   // them to /data/apex/active first.
   ScanStagedSessionsDirAndStage();
   if (auto status = ApexFileRepository::GetInstance().AddDataApex(
-          gConfig->active_apex_data_dir, gConfig->decompression_dir);
+          gConfig->active_apex_data_dir);
       !status.ok()) {
     LOG(ERROR) << "Failed to collect data APEX files : " << status.error();
   }
@@ -2911,39 +2978,33 @@ Result<bool> ShouldAllocateSpaceForDecompression(
     return true;
   }
 
-  // From here on, we can assume there is a pre-installed APEX.
   // Check if there is a data apex
   if (!instance.HasDataVersion(new_apex_name)) {
-    // Decompression of compressed APEX is prevented by existing data apex.
-    // Since there is none, then new_apex will definitely get decompressed.
-    return true;
-  }
-
-  // From here on, data apex exists. So we should compare directly against data
-  // apex.
-  // TODO(b/179497746): have ApexFileRepo provide reference to individual
-  // pre-installed apex by name
-  const auto data_apex_path = instance.GetDataPath(new_apex_name);
-  if (!data_apex_path.ok()) {
-    return Error() << "Failed to open data apex";
-  }
-  const auto data_apex = ApexFile::Open(*data_apex_path);
-  // Compare the data apex version with new apex
-  const int64_t data_version = data_apex->GetManifest().version();
-
-  // new_apex will compete against the data apex if data apex is from an update.
-  if (instance.IsDecompressedApex(*data_apex)) {
-    // Since data apex is decompressed, it means device is using the compressed
+    // Data apex doesn't exist. Compare against pre-installed APEX
+    auto pre_installed_apex = instance.GetPreInstalledApex(new_apex_name);
+    if (!pre_installed_apex.get().IsCompressed()) {
+      // Compressing an existing uncompressed system APEX.
+      return true;
+    }
+    // Since there is no data apex, it means device is using the compressed
     // pre-installed version. If new apex has higher version, we are upgrading
     // the pre-install version and if new apex has lower version, we are
     // downgrading it. So the current decompressed apex should be replaced
     // with the new decompressed apex to reflect that.
-
-    return new_apex_version != data_version;
+    const int64_t pre_installed_version =
+        instance.GetPreInstalledApex(new_apex_name)
+            .get()
+            .GetManifest()
+            .version();
+    return new_apex_version != pre_installed_version;
   }
 
-  // If data apex is not decompressed, then we only decompress the new_apex
-  // if it has higher version than data apex.
+  // From here on, data apex exists. So we should compare directly against data
+  // apex.
+  auto data_apex = instance.GetDataApex(new_apex_name);
+  // Compare the data apex version with new apex
+  const int64_t data_version = data_apex.get().GetManifest().version();
+  // We only decompress the new_apex if it has higher version than data apex.
   return new_apex_version > data_version;
 }
 
@@ -2979,19 +3040,33 @@ void CollectApexInfoList(std::ostream& os,
 }
 
 // Reserve |size| bytes in |dest_dir| by creating a zero-filled file
+// If |size| passed is 0, then we cleanup reserved space and any
+// ota_apex that has been processed as part of pre-reboot decompression.
 Result<void> ReserveSpaceForCompressedApex(int64_t size,
                                            const std::string& dest_dir) {
-  LOG(INFO) << "Reserving " << size << " bytes for compressed APEX";
-
   if (size < 0) {
     return Error() << "Cannot reserve negative byte of space";
   }
   auto file_path = StringPrintf("%s/full.tmp", dest_dir.c_str());
   if (size == 0) {
+    LOG(INFO) << "Cleaning up reserved space for compressed APEX";
+    // Ota is being cancelled. Clean up reserved space
     RemoveFileIfExists(file_path);
+
+    // Clean up any processed ota_apex
+    auto ota_apex_files =
+        FindFilesBySuffix(gConfig->decompression_dir, {kOtaApexPackageSuffix});
+    if (!ota_apex_files.ok()) {
+      return Error() << "Failed to clean up ota_apex: "
+                     << ota_apex_files.error();
+    }
+    for (const std::string& ota_apex : *ota_apex_files) {
+      RemoveFileIfExists(ota_apex);
+    }
     return {};
   }
 
+  LOG(INFO) << "Reserving " << size << " bytes for compressed APEX";
   unique_fd dest_fd(
       open(file_path.c_str(), O_WRONLY | O_CLOEXEC | O_CREAT, 0644));
   if (dest_fd.get() == -1) {
@@ -3019,8 +3094,7 @@ int OnOtaChrootBootstrap() {
                << Join(gConfig->apex_built_in_dirs, ',');
     return 1;
   }
-  if (auto status = instance.AddDataApex(gConfig->active_apex_data_dir,
-                                         gConfig->decompression_dir);
+  if (auto status = instance.AddDataApex(gConfig->active_apex_data_dir);
       !status.ok()) {
     LOG(ERROR) << "Failed to scan upgraded apexes from "
                << gConfig->active_apex_data_dir;
@@ -3201,6 +3275,18 @@ int OnOtaChrootBootstrapFlattenedApex() {
 
 android::apex::MountedApexDatabase& GetApexDatabaseForTesting() {
   return gMountedApexes;
+}
+
+Result<ApexFile> InstallPackage(const std::string& package_path) {
+  LOG(INFO) << "Installing " << package_path;
+  auto apex = ApexFile::Open(package_path);
+  if (!apex.ok()) {
+    return apex;
+  }
+  if (!apex->GetManifest().supportsrebootlessupdate()) {
+    return Error() << package_path << " does not support non-staged update";
+  }
+  return Error() << "TODO(b/187864524): implement";
 }
 
 }  // namespace apex
