@@ -368,6 +368,38 @@ genrule {
        "$(genDir)/apex.apexd_test_different_key_v2.apex"
 }
 
+genrule {
+  // Generates an apex which has a different manifest outside the filesystem
+  // image.
+  name: "gen_manifest_mismatch_rebootless_apex",
+  out: ["test.rebootless_apex_manifest_mismatch.apex"],
+  srcs: [":test.rebootless_apex_v1"],
+  tools: ["soong_zip", "zipalign", "conv_apex_manifest"],
+  cmd: "unzip -q $(in) -d $(genDir) && " +
+       "$(location conv_apex_manifest) setprop version 137 $(genDir)/apex_manifest.pb && " +
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) " +
+       "-s apex_manifest.pb -s apex_payload.img -s apex_pubkey " +
+       "-o $(genDir)/unaligned.apex && " +
+       "$(location zipalign) -f 4096 $(genDir)/unaligned.apex " +
+       "$(genDir)/test.rebootless_apex_manifest_mismatch.apex"
+}
+
+genrule {
+  // Generates an apex with a corrupted filesystem image, which should cause
+  // dm-verity verification to fail
+  name: "gen_corrupt_rebootless_apex",
+  out: ["test.rebootless_apex_corrupted.apex"],
+  srcs: [":test.rebootless_apex_v1"],
+  tools: ["soong_zip", "zipalign"],
+  cmd: "unzip -q $(in) -d $(genDir) && " +
+       "dd if=/dev/zero of=$(genDir)/apex_payload.img conv=notrunc bs=1024 seek=16 count=1 && " +
+       "$(location soong_zip) -d -C $(genDir) -D $(genDir) " +
+       "-s apex_manifest.pb -s apex_payload.img -s apex_pubkey " +
+       "-o $(genDir)/unaligned.apex && " +
+       "$(location zipalign) -f 4096 $(genDir)/unaligned.apex " +
+       "$(genDir)/test.rebootless_apex_corrupted.apex"
+}
+
 cc_test {
   name: "ApexTestCases",
   defaults: [
@@ -427,6 +459,19 @@ cc_test {
     "apexd_testdata/com.android.apex.compressed.avbpubkey",
     ":com.android.apex.test.sharedlibs_generated.v1.libvX_prebuilt",
     ":com.android.apex.test.sharedlibs_generated.v2.libvY_prebuilt",
+    ":test.rebootless_apex_v1",
+    ":test.rebootless_apex_v2",
+    ":test.rebootless_apex_v2_no_hashtree",
+    ":gen_manifest_mismatch_rebootless_apex",
+    ":gen_corrupt_rebootless_apex",
+    ":test.rebootless_apex_provides_sharedlibs",
+    ":test.rebootless_apex_provides_native_libs",
+    ":test.rebootless_apex_requires_shared_apex_libs",
+    ":test.rebootless_apex_jni_libs",
+    ":test.rebootless_apex_add_native_lib",
+    ":test.rebootless_apex_remove_native_lib",
+    ":test.rebootless_apex_app_in_apex",
+    ":test.rebootless_apex_priv_app_in_apex",
   ],
   srcs: [
     "apex_database_test.cpp",

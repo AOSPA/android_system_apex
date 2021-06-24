@@ -1,4 +1,5 @@
 {
   "name": "com.android.apex.cts.shim",
-  "version": 2
+  "version": 2,
+  "supportsRebootlessUpdate": true
 }

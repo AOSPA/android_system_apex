@@ -133,7 +133,7 @@ apex {
   apps: ["CtsShim", "CtsShimPriv"],
   installable: false,
   allowed_files: "default_shim_allowed_list.txt",
-  test_only_no_hashtree: true,
+  generate_hashtree: false,
   updatable: false,
 }
 
@@ -259,6 +259,7 @@ genrule {
     ":com.android.apex.cts.shim.v2_with_post_install_hook",
     ":com.android.apex.cts.shim.v2_sdk_target_p",
     ":com.android.apex.cts.shim.v2_apk_in_apex_sdk_target_p",
+    ":com.android.apex.cts.shim.v2_rebootless",
     ":com.android.apex.cts.shim.v3",
     ":com.android.apex.cts.shim.v3_signed_bob",
     ":com.android.apex.cts.shim.v3_signed_bob_rot",
@@ -549,4 +550,15 @@ genrule {
   srcs: [":com.android.apex.cts.shim.v2"],
   out: ["com.android.apex.cts.shim.v2_unsigned_apk_container.apex"],
   cmd: "cp -v $(in) $(out) && zip -d $(out) META-INF*",
+}
+
+// Apex shim for testing rebootless updates
+apex {
+  name: "com.android.apex.cts.shim.v2_rebootless",
+  manifest: "manifest_v2.json",
+  file_contexts: ":apex.test-file_contexts",
+  key: "com.android.apex.cts.shim.key",
+  prebuilts: ["hash_of_dev_null"],
+  installable: false,
+  updatable: false,
 }

@@ -201,6 +201,37 @@ TEST(ApexDatabaseTest, MountMultiple) {
                               kDeviceName[3], kHashtreeLoopName[3]));
 }
 
+TEST(ApexDatabaseTest, GetLatestMountedApex) {
+  constexpr const char* kPackage = "package";
+  constexpr const char* kLoopName = "loop";
+  constexpr const char* kPath = "path";
+  constexpr const char* kMountPoint = "mount";
+  constexpr const char* kDeviceName = "dev";
+  constexpr const char* kHashtreeLoopName = "hash-loop";
+
+  MountedApexDatabase db;
+  ASSERT_EQ(CountPackages(db), 0u);
+
+  db.AddMountedApex(kPackage, true, kLoopName, kPath, kMountPoint, kDeviceName,
+                    kHashtreeLoopName);
+
+  auto ret = db.GetLatestMountedApex(kPackage);
+  MountedApexData expected(kLoopName, kPath, kMountPoint, kDeviceName,
+                           kHashtreeLoopName);
+  ASSERT_TRUE(ret.has_value());
+  ASSERT_EQ(ret->loop_name, std::string(kLoopName));
+  ASSERT_EQ(ret->full_path, std::string(kPath));
+  ASSERT_EQ(ret->mount_point, std::string(kMountPoint));
+  ASSERT_EQ(ret->device_name, std::string(kDeviceName));
+  ASSERT_EQ(ret->hashtree_loop_name, std::string(kHashtreeLoopName));
+}
+
+TEST(ApexDatabaseTest, GetLatestMountedApexReturnsNullopt) {
+  MountedApexDatabase db;
+  auto ret = db.GetLatestMountedApex("no-such-name");
+  ASSERT_FALSE(ret.has_value());
+}
+
 #pragma clang diagnostic push
 // error: 'ReturnSentinel' was marked unused but was used
 // [-Werror,-Wused-but-marked-unused]

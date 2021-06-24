@@ -210,6 +210,8 @@ Result<void> ConfigureLoopDevice(const int device_fd, const std::string& target,
   strlcpy((char*)li.lo_crypt_name, kApexLoopIdPrefix, LO_NAME_SIZE);
   li.lo_offset = image_offset;
   li.lo_sizelimit = image_size;
+  // Automatically free loop device on last close.
+  li.lo_flags |= LO_FLAGS_AUTOCLEAR;
 
   if (use_loop_configure) {
     struct loop_config config;
