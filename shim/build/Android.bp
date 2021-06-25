@@ -555,7 +555,7 @@ genrule {
 // Apex shim for testing rebootless updates
 apex {
   name: "com.android.apex.cts.shim.v2_rebootless",
-  manifest: "manifest_v2.json",
+  manifest: "manifest_v2_rebootless.json",
   file_contexts: ":apex.test-file_contexts",
   key: "com.android.apex.cts.shim.key",
   prebuilts: ["hash_of_dev_null"],

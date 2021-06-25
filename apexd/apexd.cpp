@@ -34,6 +34,7 @@
 #include "com_android_apex.h"
 
 #include <ApexProperties.sysprop.h>
+#include <android-base/chrono_utils.h>
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/macros.h>
@@ -83,6 +84,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+using android::base::boot_clock;
 using android::base::ConsumePrefix;
 using android::base::ErrnoError;
 using android::base::Error;
@@ -405,6 +407,7 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
   }
 
   LOG(VERBOSE) << "Creating mount point: " << mount_point;
+  auto time_started = boot_clock::now();
   // Note: the mount point could exist in case when the APEX was activated
   // during the bootstrap phase (e.g., the runtime or tzdata APEX).
   // Although we have separate mount namespaces to separate the early activated
@@ -530,8 +533,10 @@ Result<MountedApexData> MountPackageImpl(const ApexFile& apex,
   }
   if (mount(block_device.c_str(), mount_point.c_str(),
             apex.GetFsType().value().c_str(), mount_flags, nullptr) == 0) {
+    auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        boot_clock::now() - time_started).count();
     LOG(INFO) << "Successfully mounted package " << full_path << " on "
-              << mount_point;
+              << mount_point << " duration=" << time_elapsed;
     auto status = VerifyMountedImage(apex, mount_point);
     if (!status.ok()) {
       if (umount2(mount_point.c_str(), UMOUNT_NOFOLLOW) != 0) {
