@@ -1413,22 +1413,19 @@ TEST_F(ApexServiceTest, GetFactoryPackages) {
   ASSERT_TRUE(IsOk(factory_packages));
   ASSERT_TRUE(factory_packages->size() > 0);
 
-  std::vector<std::string> builtin_dirs;
+  std::vector<std::string> builtinDirs;
   for (const auto& d : kApexPackageBuiltinDirs) {
     std::string realpath;
     if (android::base::Realpath(d, &realpath)) {
-      builtin_dirs.push_back(realpath);
+      builtinDirs.push_back(realpath);
     }
     // realpath might fail in case when dir is a non-existing path. We can
     // ignore non-existing paths.
   }
 
-  // Decompressed APEX is also considred factory package
-  builtin_dirs.push_back(kApexDecompressedDir);
-
   for (const ApexInfo& package : *factory_packages) {
     bool is_builtin = false;
-    for (const auto& dir : builtin_dirs) {
+    for (const auto& dir : builtinDirs) {
       if (StartsWith(package.modulePath, dir)) {
         is_builtin = true;
       }
@@ -3105,7 +3102,6 @@ TEST_F(ApexServiceTestForCompressedApex, ReserveSpaceForCompressedApex) {
 
 int main(int argc, char** argv) {
   android::base::InitLogging(argv, &android::base::StderrLogger);
-  android::base::SetMinimumLogSeverity(android::base::VERBOSE);
   ::testing::InitGoogleTest(&argc, argv);
   ::testing::UnitTest::GetInstance()->listeners().Append(
       new android::apex::LogTestToLogcat());

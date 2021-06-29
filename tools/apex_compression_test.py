@@ -148,15 +148,11 @@ class ApexCompressionTest(unittest.TestCase):
       print('Cleanup: ' + str(self._to_cleanup))
 
   def _run_apex_compression_tool(self, args):
-    cmd = ['apex_compression_tool']
     host_build_top = os.environ.get('ANDROID_BUILD_TOP')
-    if host_build_top:
-      os.environ['APEX_COMPRESSION_TOOL_PATH'] = (
-          os.path.join(host_build_top, 'out/soong/host/linux-x86/bin')
-          + ':' + os.path.join(host_build_top, 'prebuilts/sdk/tools/linux/bin'))
-    else:
-      os.environ['APEX_COMPRESSION_TOOL_PATH'] = os.path.dirname(
-        shutil.which('apex_compression_tool'))
+    cmd = ['apex_compression_tool']
+    os.environ['APEX_COMPRESSION_TOOL_PATH'] = (
+        os.path.join(host_build_top, 'out/soong/host/linux-x86/bin')
+        + ':' + os.path.join(host_build_top, 'prebuilts/sdk/tools/linux/bin'))
     cmd.extend(args)
     run_host_command(cmd, True)
 

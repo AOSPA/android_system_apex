@@ -19,7 +19,6 @@
 
 #include <map>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <unordered_set>
 
@@ -196,18 +195,6 @@ class MountedApexDatabase {
         }
       }
     }
-  }
-
-  inline std::optional<MountedApexData> GetLatestMountedApex(
-      const std::string& package) REQUIRES(!mounted_apexes_mutex_) {
-    std::optional<MountedApexData> ret;
-    ForallMountedApexes(package,
-                        [&ret](const MountedApexData& data, bool latest) {
-                          if (latest) {
-                            ret.emplace(data);
-                          }
-                        });
-    return ret;
   }
 
   void PopulateFromMounts(const std::string& active_apex_dir,
