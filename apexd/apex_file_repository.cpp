@@ -30,6 +30,7 @@
 #include "apex_file.h"
 #include "apexd_utils.h"
 
+using android::base::EndsWith;
 using android::base::Error;
 using android::base::GetProperty;
 using android::base::Result;
@@ -103,10 +104,8 @@ android::base::Result<void> ApexFileRepository::AddPreInstalledApex(
 
 // TODO(b/179497746): AddDataApex should not concern with filtering out invalid
 //   apex.
-Result<void> ApexFileRepository::AddDataApex(
-    const std::string& data_dir, const std::string& decompression_dir) {
-  LOG(INFO) << "Scanning " << data_dir << " and " << decompression_dir
-            << " for data ApexFiles";
+Result<void> ApexFileRepository::AddDataApex(const std::string& data_dir) {
+  LOG(INFO) << "Scanning " << data_dir << " for data ApexFiles";
   if (access(data_dir.c_str(), F_OK) != 0 && errno == ENOENT) {
     LOG(WARNING) << data_dir << " does not exist. Skipping";
     return {};
@@ -117,19 +116,9 @@ Result<void> ApexFileRepository::AddDataApex(
   if (!active_apex.ok()) {
     return active_apex.error();
   }
-  Result<std::vector<std::string>> decompressed_apex =
-      FindFilesBySuffix(decompression_dir, {kDecompressedApexPackageSuffix});
-  if (!decompressed_apex.ok()) {
-    return decompressed_apex.error();
-  }
-  std::vector<std::string> all_apex_files;
-  all_apex_files.insert(all_apex_files.end(), active_apex->begin(),
-                        active_apex->end());
-  all_apex_files.insert(all_apex_files.end(), decompressed_apex->begin(),
-                        decompressed_apex->end());
 
   // TODO(b/179248390): scan parallelly if possible
-  for (const auto& file : all_apex_files) {
+  for (const auto& file : *active_apex) {
     LOG(INFO) << "Found updated apex " << file;
     Result<ApexFile> apex_file = ApexFile::Open(file);
     if (!apex_file.ok()) {
@@ -152,28 +141,7 @@ Result<void> ApexFileRepository::AddDataApex(
       continue;
     }
 
-    if (IsDecompressedApex(*apex_file)) {
-      // Decompressed apex is invalid if apex on system in not compressed
-      ApexFileRef pre_installed_apex = GetPreInstalledApex(name);
-      if (!pre_installed_apex.get().IsCompressed()) {
-        LOG(ERROR) << "Skipping " << file
-                   << " : Decompressed APEX on data is missing its compressed"
-                   << " pre-installed APEX counterpart on system";
-        continue;
-      }
-      // Verify that apex_file has same version as pre_installed_apex, otherwise
-      // it's an invalid decompressed apex
-      // TODO(b/185708645): Comparing version to determine equivalence is
-      // brittle.
-      if (apex_file->GetManifest().version() !=
-          pre_installed_apex.get().GetManifest().version()) {
-        LOG(ERROR) << "Skipping " << file
-                   << " : Decompressed APEX has different version than"
-                   << " pre-installed APEX";
-        continue;
-      }
-    } else if (android::base::EndsWith(apex_file->GetPath(),
-                                       kDecompressedApexPackageSuffix)) {
+    if (EndsWith(apex_file->GetPath(), kDecompressedApexPackageSuffix)) {
       LOG(WARNING) << "Skipping " << file
                    << " : Non-decompressed APEX should not have "
                    << kDecompressedApexPackageSuffix << " suffix";
@@ -191,9 +159,7 @@ Result<void> ApexFileRepository::AddDataApex(
     // If multiple data apexs are preset, select the one with highest version
     bool prioritize_higher_version = new_version > existing_version;
     // For same version, non-decompressed apex gets priority
-    bool prioritize_non_decompressed =
-        (new_version == existing_version) && !IsDecompressedApex(*apex_file);
-    if (prioritize_higher_version || prioritize_non_decompressed) {
+    if (prioritize_higher_version) {
       it->second = std::move(*apex_file);
     }
   }
@@ -295,6 +261,12 @@ ApexFileRepository::AllApexFilesByName() const {
   }
 
   return std::move(result);
+}
+
+ApexFileRef ApexFileRepository::GetDataApex(const std::string& name) const {
+  auto it = data_store_.find(name);
+  CHECK(it != data_store_.end());
+  return std::cref(it->second);
 }
 
 ApexFileRef ApexFileRepository::GetPreInstalledApex(

@@ -111,6 +111,8 @@ class ApexService : public BnApexService {
       int64_t* required_size) override;
   BinderStatus reserveSpaceForCompressedApex(
       const CompressedApexInfoList& compressed_apex_info_list) override;
+  BinderStatus installAndActivatePackage(const std::string& package_path,
+                                         ApexInfo* aidl_return) override;
 
   status_t dump(int fd, const Vector<String16>& args) override;
 
@@ -452,6 +454,23 @@ BinderStatus ApexService::getAllPackages(std::vector<ApexInfo>* aidl_return) {
   return BinderStatus::ok();
 }
 
+BinderStatus ApexService::installAndActivatePackage(
+    const std::string& package_path, ApexInfo* aidl_return) {
+  LOG(DEBUG) << "installAndActivatePackage() received by ApexService, path: "
+             << package_path;
+  auto res = InstallPackage(package_path);
+  if (!res.ok()) {
+    LOG(ERROR) << "Failed to install package " << package_path << " : "
+               << res.error();
+    return BinderStatus::fromExceptionCode(
+        BinderStatus::EX_SERVICE_SPECIFIC,
+        String8(res.error().message().c_str()));
+  }
+  *aidl_return = GetApexInfo(*res);
+  aidl_return->isActive = true;
+  return BinderStatus::ok();
+}
+
 BinderStatus ApexService::preinstallPackages(
     const std::vector<std::string>& paths) {
   BinderStatus debug_check = CheckDebuggable("preinstallPackages");
@@ -637,7 +656,7 @@ BinderStatus ApexService::recollectDataApex(
     return root;
   }
   ApexFileRepository& instance = ApexFileRepository::GetInstance();
-  if (auto res = instance.AddDataApex(path, decompression_dir); !res.ok()) {
+  if (auto res = instance.AddDataApex(path); !res.ok()) {
     return BinderStatus::fromExceptionCode(
         BinderStatus::EX_SERVICE_SPECIFIC,
         String8(res.error().message().c_str()));

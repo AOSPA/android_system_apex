@@ -75,5 +75,8 @@ message ApexManifest {
 
   // Exists only for compressed APEX
   CompressedApexMetadata capexMetadata = 12;
+
+  // Indicates that this APEX can be updated without rebooting device.
+  bool supportsRebootlessUpdate = 13;
 }
 

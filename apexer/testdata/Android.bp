@@ -37,7 +37,8 @@ apex {
     key: "com.android.example.apex.key",
     certificate: ":com.android.example.apex.certificate",
     installable: false,
-    updatable:false
+    updatable:false,
+    generate_hashtree: false,
 }
 
 apex {
@@ -49,6 +50,7 @@ apex {
     certificate: ":com.android.example.apex.certificate",
     min_sdk_version: "29",
     installable: false,
+    generate_hashtree: false,
 }
 
 apex {
