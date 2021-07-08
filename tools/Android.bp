@@ -68,7 +68,12 @@ python_test_host {
         "apex_compression_test.py",
     ],
     data: [
+        ":avbtool",
         ":com.android.example.apex",
+        ":conv_apex_manifest",
+        ":apex_compression_tool",
+        ":deapexer",
+        ":soong_zip",
     ],
     version: {
         py2: {
@@ -82,10 +87,7 @@ python_test_host {
         "apex_manifest_proto",
     ],
     test_suites: ["general-tests"],
-    required: [
-      "avbtool",
-      "apex_compression_tool",
-      "conv_apex_manifest",
-      "deapexer",
-    ],
+    test_options: {
+        unit_test: true,
+    },
 }

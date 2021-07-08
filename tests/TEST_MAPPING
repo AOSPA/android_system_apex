@@ -11,9 +11,10 @@
     }
   ],
   "presubmit-large": [
-    {
-      "name": "apex_rollback_tests"
-    },
+    // TODO(b/190710217): uncomment this.
+    //{
+    //  "name": "apex_rollback_tests"
+    //},
     {
       "name": "sdkextensions_e2e_tests"
     },
