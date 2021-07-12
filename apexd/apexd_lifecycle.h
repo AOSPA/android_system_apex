@@ -39,8 +39,8 @@ class ApexdLifecycle {
   }
   bool IsBooting();
   void MarkBootCompleted();
-  void WaitForBootStatus(
-      android::base::Result<void> (&rollback_fn)(const std::string&));
+  void WaitForBootStatus(android::base::Result<void> (&rollback_fn)(
+      const std::string&, const std::string&));
 };
 }  // namespace apex
 }  // namespace android

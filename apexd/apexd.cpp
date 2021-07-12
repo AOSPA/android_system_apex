@@ -53,6 +53,7 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <linux/f2fs.h>
 #include <linux/loop.h>
 #include <stdlib.h>
 #include <sys/inotify.h>
@@ -155,6 +156,31 @@ bool IsBootstrapApex(const ApexFile& apex) {
                    apex.GetManifest().name()) != kBootstrapApexes.end();
 }
 
+void ReleaseF2fsCompressedBlocks(const std::string& file_path) {
+  unique_fd fd(
+      TEMP_FAILURE_RETRY(open(file_path.c_str(), O_RDONLY | O_CLOEXEC, 0)));
+  if (fd.get() == -1) {
+    PLOG(ERROR) << "Failed to open " << file_path;
+    return;
+  }
+  unsigned int flags;
+  if (ioctl(fd, FS_IOC_GETFLAGS, &flags) == -1) {
+    PLOG(ERROR) << "Failed to call FS_IOC_GETFLAGS on " << file_path;
+    return;
+  }
+  if ((flags & FS_COMPR_FL) == 0) {
+    // Doesn't support f2fs-compression.
+    return;
+  }
+  uint64_t blk_cnt;
+  if (ioctl(fd, F2FS_IOC_RELEASE_COMPRESS_BLOCKS, &blk_cnt) == -1) {
+    PLOG(ERROR) << "Failed to call F2FS_IOC_RELEASE_COMPRESS_BLOCKS on "
+                << file_path;
+  }
+  LOG(INFO) << "Released " << blk_cnt << " compressed blocks from "
+            << file_path;
+}
+
 // Pre-allocate loop devices so that we don't have to wait for them
 // later when actually activating APEXes.
 Result<void> PreAllocateLoopDevices() {
@@ -165,13 +191,13 @@ Result<void> PreAllocateLoopDevices() {
 
   auto size = 0;
   for (const auto& path : *scan) {
-    auto apexFile = ApexFile::Open(path);
-    if (!apexFile.ok()) {
+    auto apex_file = ApexFile::Open(path);
+    if (!apex_file.ok()) {
       continue;
     }
     size++;
     // bootstrap Apexes may be activated on separate namespaces.
-    if (IsBootstrapApex(*apexFile)) {
+    if (IsBootstrapApex(*apex_file)) {
       size++;
     }
   }
@@ -318,7 +344,7 @@ Result<void> RemovePreviouslyActiveApexFiles(
     const std::unordered_set<std::string>& affected_packages,
     const std::unordered_set<std::string>& files_to_keep) {
   auto all_active_apex_files =
-      FindFilesBySuffix(kActiveApexPackagesDataDir, {kApexPackageSuffix});
+      FindFilesBySuffix(gConfig->active_apex_data_dir, {kApexPackageSuffix});
 
   if (!all_active_apex_files.ok()) {
     return all_active_apex_files.error();
@@ -861,7 +887,7 @@ Result<void> DeleteBackup() {
 }
 
 Result<void> BackupActivePackages() {
-  LOG(DEBUG) << "Initializing  backup of " << kActiveApexPackagesDataDir;
+  LOG(DEBUG) << "Initializing  backup of " << gConfig->active_apex_data_dir;
 
   // Previous restore might've delete backups folder.
   auto create_status = CreateDirIfNeeded(kApexBackupDir, 0700);
@@ -869,18 +895,19 @@ Result<void> BackupActivePackages() {
     return Error() << "Backup failed : " << create_status.error();
   }
 
-  auto apex_active_exists = PathExists(std::string(kActiveApexPackagesDataDir));
+  auto apex_active_exists =
+      PathExists(std::string(gConfig->active_apex_data_dir));
   if (!apex_active_exists.ok()) {
     return Error() << "Backup failed : " << apex_active_exists.error();
   }
   if (!*apex_active_exists) {
-    LOG(DEBUG) << kActiveApexPackagesDataDir
+    LOG(DEBUG) << gConfig->active_apex_data_dir
                << " does not exist. Nothing to backup";
     return {};
   }
 
   auto active_packages =
-      FindFilesBySuffix(kActiveApexPackagesDataDir, {kApexPackageSuffix});
+      FindFilesBySuffix(gConfig->active_apex_data_dir, {kApexPackageSuffix});
   if (!active_packages.ok()) {
     return Error() << "Backup failed : " << active_packages.error();
   }
@@ -921,7 +948,7 @@ Result<void> BackupActivePackages() {
 }
 
 Result<void> RestoreActivePackages() {
-  LOG(DEBUG) << "Initializing  restore of " << kActiveApexPackagesDataDir;
+  LOG(DEBUG) << "Initializing  restore of " << gConfig->active_apex_data_dir;
 
   auto backup_exists = PathExists(std::string(kApexBackupDir));
   if (!backup_exists.ok()) {
@@ -932,29 +959,30 @@ Result<void> RestoreActivePackages() {
   }
 
   struct stat stat_data;
-  if (stat(kActiveApexPackagesDataDir, &stat_data) != 0) {
-    return ErrnoError() << "Failed to access " << kActiveApexPackagesDataDir;
+  if (stat(gConfig->active_apex_data_dir, &stat_data) != 0) {
+    return ErrnoError() << "Failed to access " << gConfig->active_apex_data_dir;
   }
 
-  LOG(DEBUG) << "Deleting existing packages in " << kActiveApexPackagesDataDir;
+  LOG(DEBUG) << "Deleting existing packages in "
+             << gConfig->active_apex_data_dir;
   auto delete_status =
-      DeleteDirContent(std::string(kActiveApexPackagesDataDir));
+      DeleteDirContent(std::string(gConfig->active_apex_data_dir));
   if (!delete_status.ok()) {
     return delete_status;
   }
 
   LOG(DEBUG) << "Renaming " << kApexBackupDir << " to "
-             << kActiveApexPackagesDataDir;
-  if (rename(kApexBackupDir, kActiveApexPackagesDataDir) != 0) {
+             << gConfig->active_apex_data_dir;
+  if (rename(kApexBackupDir, gConfig->active_apex_data_dir) != 0) {
     return ErrnoError() << "Failed to rename " << kApexBackupDir << " to "
-                        << kActiveApexPackagesDataDir;
+                        << gConfig->active_apex_data_dir;
   }
 
   LOG(DEBUG) << "Restoring original permissions for "
-             << kActiveApexPackagesDataDir;
-  if (chmod(kActiveApexPackagesDataDir, stat_data.st_mode & ALLPERMS) != 0) {
+             << gConfig->active_apex_data_dir;
+  if (chmod(gConfig->active_apex_data_dir, stat_data.st_mode & ALLPERMS) != 0) {
     return ErrnoError() << "Failed to restore original permissions for "
-                        << kActiveApexPackagesDataDir;
+                        << gConfig->active_apex_data_dir;
   }
 
   return {};
@@ -1093,7 +1121,7 @@ Result<void> ResumeRevertIfNeeded() {
   if (sessions.empty()) {
     return {};
   }
-  return RevertActiveSessions("");
+  return RevertActiveSessions("", "");
 }
 
 Result<void> ActivateSharedLibsPackage(const std::string& mount_point) {
@@ -1594,6 +1622,7 @@ Result<void> ActivateApexPackages(const std::vector<ApexFileRef>& apexes,
 
   size_t activated_cnt = 0;
   size_t failed_cnt = 0;
+  std::string error_message;
   for (size_t i = 0; i < futures.size(); i++) {
     for (const auto& res : futures[i].get()) {
       if (res.ok()) {
@@ -1601,12 +1630,16 @@ Result<void> ActivateApexPackages(const std::vector<ApexFileRef>& apexes,
       } else {
         ++failed_cnt;
         LOG(ERROR) << res.error();
+        if (failed_cnt == 1) {
+          error_message = res.error().message();
+        }
       }
     }
   }
 
   if (failed_cnt > 0) {
-    return Error() << "Failed to activate " << failed_cnt << " APEX packages";
+    return Error() << "Failed to activate " << failed_cnt
+                   << " APEX packages. One of the errors: " << error_message;
   }
   LOG(INFO) << "Activated " << activated_cnt << " packages.";
   return {};
@@ -1941,18 +1974,20 @@ void ScanStagedSessionsDirAndStage() {
 
     std::string build_fingerprint = GetProperty(kBuildFingerprintSysprop, "");
     if (session.GetBuildFingerprint().compare(build_fingerprint) != 0) {
-      LOG(ERROR) << "APEX build fingerprint has changed";
+      auto error_message = "APEX build fingerprint has changed";
+      LOG(ERROR) << error_message;
+      session.SetErrorMessage(error_message);
       continue;
     }
 
     std::vector<std::string> dirs_to_scan;
     if (session.GetChildSessionIds().empty()) {
-      dirs_to_scan.push_back(std::string(kStagedSessionsDir) + "/session_" +
-                             std::to_string(session_id));
+      dirs_to_scan.push_back(std::string(gConfig->staged_session_dir) +
+                             "/session_" + std::to_string(session_id));
     } else {
       for (auto child_session_id : session.GetChildSessionIds()) {
-        dirs_to_scan.push_back(std::string(kStagedSessionsDir) + "/session_" +
-                               std::to_string(child_session_id));
+        dirs_to_scan.push_back(std::string(gConfig->staged_session_dir) +
+                               "/session_" + std::to_string(child_session_id));
       }
     }
 
@@ -1963,20 +1998,28 @@ void ScanStagedSessionsDirAndStage() {
           FindFilesBySuffix(dir_to_scan, {kApexPackageSuffix});
       if (!scan.ok()) {
         LOG(WARNING) << scan.error();
+        session.SetErrorMessage(scan.error().message());
         scan_successful = false;
         break;
       }
 
       if (scan->size() > 1) {
-        LOG(WARNING) << "More than one APEX package found in the same session "
-                     << "directory " << dir_to_scan << ", skipping activation.";
+        std::string error_message = StringPrintf(
+            "More than one APEX package found in the same session directory %s "
+            ", skipping activation",
+            dir_to_scan.c_str());
+        LOG(WARNING) << error_message;
+        session.SetErrorMessage(error_message);
         scan_successful = false;
         break;
       }
 
       if (scan->empty()) {
-        LOG(WARNING) << "No APEX packages found while scanning " << dir_to_scan
-                     << " session id: " << session_id << ".";
+        std::string error_message = StringPrintf(
+            "No APEX packages found while scanning %s session id: %d.",
+            dir_to_scan.c_str(), session_id);
+        LOG(WARNING) << error_message;
+        session.SetErrorMessage(error_message);
         scan_successful = false;
         break;
       }
@@ -1990,9 +2033,11 @@ void ScanStagedSessionsDirAndStage() {
     // Run postinstall, if necessary.
     Result<void> postinstall_status = PostinstallPackages(apexes);
     if (!postinstall_status.ok()) {
-      LOG(ERROR) << "Postinstall failed for session "
-                 << std::to_string(session_id) << ": "
-                 << postinstall_status.error();
+      std::string error_message =
+          StringPrintf("Postinstall failed for session %d %s", session_id,
+                       postinstall_status.error().message().c_str());
+      LOG(ERROR) << error_message;
+      session.SetErrorMessage(error_message);
       continue;
     }
 
@@ -2008,8 +2053,11 @@ void ScanStagedSessionsDirAndStage() {
 
     const Result<void> result = StagePackages(apexes);
     if (!result.ok()) {
-      LOG(ERROR) << "Activation failed for packages " << Join(apexes, ',')
-                 << ": " << result.error();
+      std::string error_message = StringPrintf(
+          "Activation failed for packages %s : %s", Join(apexes, ',').c_str(),
+          result.error().message().c_str());
+      LOG(ERROR) << error_message;
+      session.SetErrorMessage(error_message);
       continue;
     }
 
@@ -2044,7 +2092,7 @@ Result<void> PostinstallPackages(const std::vector<std::string>& paths) {
 
 namespace {
 std::string StageDestPath(const ApexFile& apex_file) {
-  return StringPrintf("%s/%s%s", kActiveApexPackagesDataDir,
+  return StringPrintf("%s/%s%s", gConfig->active_apex_data_dir,
                       GetPackageId(apex_file.GetManifest()).c_str(),
                       kApexPackageSuffix);
 }
@@ -2078,7 +2126,7 @@ Result<void> StagePackages(const std::vector<std::string>& tmp_paths) {
 
   // Make sure that kActiveApexPackagesDataDir exists.
   auto create_dir_status =
-      CreateDirIfNeeded(std::string(kActiveApexPackagesDataDir), 0755);
+      CreateDirIfNeeded(std::string(gConfig->active_apex_data_dir), 0755);
   if (!create_dir_status.ok()) {
     return create_dir_status.error();
   }
@@ -2177,7 +2225,8 @@ Result<void> UnstagePackages(const std::vector<std::string>& paths) {
  * Also, we need to put staged sessions in /data/apex/sessions in REVERTED state
  * so that they do not get activated on next reboot.
  */
-Result<void> RevertActiveSessions(const std::string& crashing_native_process) {
+Result<void> RevertActiveSessions(const std::string& crashing_native_process,
+                                  const std::string& error_message) {
   // First check whenever there is anything to revert. If there is none, then
   // fail. This prevents apexd from boot looping a device in case a native
   // process is crashing and there are no apex updates.
@@ -2189,6 +2238,9 @@ Result<void> RevertActiveSessions(const std::string& crashing_native_process) {
   for (auto& session : active_sessions) {
     if (!crashing_native_process.empty()) {
       session.SetCrashingNativeProcess(crashing_native_process);
+    }
+    if (!error_message.empty()) {
+      session.SetErrorMessage(error_message);
     }
     auto status =
         session.UpdateStateAndCommit(SessionState::REVERT_IN_PROGRESS);
@@ -2233,8 +2285,9 @@ Result<void> RevertActiveSessions(const std::string& crashing_native_process) {
 }
 
 Result<void> RevertActiveSessionsAndReboot(
-    const std::string& crashing_native_process) {
-  auto status = RevertActiveSessions(crashing_native_process);
+    const std::string& crashing_native_process,
+    const std::string& error_message) {
+  auto status = RevertActiveSessions(crashing_native_process, error_message);
   if (!status.ok()) {
     return status;
   }
@@ -2591,6 +2644,10 @@ Result<ApexFile> ProcessCompressedApex(const ApexFile& capex,
     return Error() << "Failed to decompress CAPEX: " << return_apex.error();
   }
 
+  /// Release compressed blocks in case decompression_dest is on f2fs-compressed
+  // filesystem.
+  ReleaseF2fsCompressedBlocks(decompression_dest);
+
   scope_guard.Disable();
   return return_apex;
 }
@@ -2668,7 +2725,7 @@ void OnStart() {
       LOG(INFO) << "Exceeded number of session retries ("
                 << kNumRetriesWhenCheckpointingEnabled
                 << "). Starting a revert";
-      RevertActiveSessions("");
+      RevertActiveSessions("", "");
     }
   }
 
@@ -2734,8 +2791,12 @@ void OnStart() {
   auto activate_status =
       ActivateApexPackages(activation_list, /* is_ota_chroot= */ false);
   if (!activate_status.ok()) {
-    LOG(ERROR) << "Failed to activate packages: " << activate_status.error();
-    Result<void> revert_status = RevertActiveSessionsAndReboot("");
+    std::string error_message =
+        StringPrintf("Failed to activate packages: %s",
+                     activate_status.error().message().c_str());
+    LOG(ERROR) << error_message;
+    Result<void> revert_status =
+        RevertActiveSessionsAndReboot("", error_message);
     if (!revert_status.ok()) {
       LOG(ERROR) << "Failed to revert : " << revert_status.error();
     }
@@ -2844,6 +2905,11 @@ Result<std::vector<ApexFile>> SubmitStagedSession(
       (*session).UpdateStateAndCommit(SessionState::VERIFIED);
   if (!commit_status.ok()) {
     return commit_status.error();
+  }
+
+  for (const auto& apex : ret) {
+    // Release compressed blocks in case /data is f2fs-compressed filesystem.
+    ReleaseF2fsCompressedBlocks(apex.GetPath());
   }
 
   return ret;
@@ -3559,6 +3625,10 @@ Result<ApexFile> InstallPackage(const std::string& package_path) {
   if (auto res = UpdateApexInfoList(); !res.ok()) {
     LOG(ERROR) << res.error();
   }
+
+  // Release compressed blocks in case target_file is on f2fs-compressed
+  // filesystem.
+  ReleaseF2fsCompressedBlocks(target_file);
 
   return new_apex;
 }

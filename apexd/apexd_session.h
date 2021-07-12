@@ -52,8 +52,9 @@ class ApexSession {
   const google::protobuf::RepeatedField<int> GetChildSessionIds() const;
   ::apex::proto::SessionState::State GetState() const;
   int GetId() const;
-  std::string GetBuildFingerprint() const;
-  std::string GetCrashingNativeProcess() const;
+  const std::string& GetBuildFingerprint() const;
+  const std::string& GetCrashingNativeProcess() const;
+  const std::string& GetErrorMessage() const;
   bool IsFinalized() const;
   bool HasRollbackEnabled() const;
   bool IsRollback() const;
@@ -66,6 +67,7 @@ class ApexSession {
   void SetIsRollback(const bool is_rollback);
   void SetRollbackId(const int rollback_id);
   void SetCrashingNativeProcess(const std::string& crashing_process);
+  void SetErrorMessage(const std::string& error_message);
   void AddApexName(const std::string& apex_name);
 
   android::base::Result<void> UpdateStateAndCommit(

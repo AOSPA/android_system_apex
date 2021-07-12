@@ -96,26 +96,6 @@ using MountedApexData = MountedApexDatabase::MountedApexData;
 
 namespace fs = std::filesystem;
 
-static void CleanDir(const std::string& dir) {
-  if (access(dir.c_str(), F_OK) != 0 && errno == ENOENT) {
-    LOG(WARNING) << dir << " does not exist";
-    return;
-  }
-  auto status = WalkDir(dir, [](const fs::directory_entry& p) {
-    std::error_code ec;
-    fs::file_status status = p.status(ec);
-    ASSERT_FALSE(ec) << "Failed to stat " << p.path() << " : " << ec.message();
-    if (fs::is_directory(status)) {
-      fs::remove_all(p.path(), ec);
-    } else {
-      fs::remove(p.path(), ec);
-    }
-    ASSERT_FALSE(ec) << "Failed to delete " << p.path() << " : "
-                     << ec.message();
-  });
-  ASSERT_TRUE(IsOk(status));
-}
-
 class ApexServiceTest : public ::testing::Test {
  public:
   ApexServiceTest() {
@@ -469,10 +449,10 @@ class ApexServiceTest : public ::testing::Test {
 
  private:
   void CleanUp() {
-    CleanDir(kActiveApexPackagesDataDir);
-    CleanDir(kApexBackupDir);
-    CleanDir(kApexHashTreeDir);
-    CleanDir(ApexSession::GetSessionsDir());
+    DeleteDirContent(kActiveApexPackagesDataDir);
+    DeleteDirContent(kApexBackupDir);
+    DeleteDirContent(kApexHashTreeDir);
+    DeleteDirContent(ApexSession::GetSessionsDir());
 
     DeleteIfExists("/data/misc_ce/0/apexdata/apex.apexd_test");
     DeleteIfExists("/data/misc_ce/0/apexrollback/123456");
@@ -2199,7 +2179,7 @@ TEST_F(ApexServiceTest, ActivePackagesDirEmpty) {
   }
 
   // Make sure that /data/apex/active is empty
-  CleanDir(kActiveApexPackagesDataDir);
+  DeleteDirContent(kActiveApexPackagesDataDir);
 
   ApexInfoList list;
   ApexSessionParams params;
@@ -2487,7 +2467,7 @@ TEST_F(ApexServiceRevertTest, RevertStoresCrashingNativeProcess) {
   // TODO(ioffe): this is calling into internals of apexd which makes test quite
   //  britle. With some refactoring we should be able to call binder api, or
   //  make this a unit test of apexd.cpp.
-  Result<void> res = ::android::apex::RevertActiveSessions(native_process);
+  Result<void> res = ::android::apex::RevertActiveSessions(native_process, "");
   session = ApexSession::GetSession(1543);
   ASSERT_EQ(session->GetCrashingNativeProcess(), native_process);
 }
@@ -3026,10 +3006,10 @@ class ApexServiceTestForCompressedApex : public ApexServiceTest {
 
   void TearDown() override {
     ApexServiceTest::TearDown();
-    CleanDir(kTempPrebuiltDir);
+    DeleteDirContent(kTempPrebuiltDir);
     rmdir(kTempPrebuiltDir);
-    CleanDir(kApexDecompressedDir);
-    CleanDir(kActiveApexPackagesDataDir);
+    DeleteDirContent(kApexDecompressedDir);
+    DeleteDirContent(kActiveApexPackagesDataDir);
   }
 };
 
