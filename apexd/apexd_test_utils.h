@@ -320,19 +320,21 @@ MATCHER_P(ApexInfoXmlEq, other, "") {
   using ::testing::Property;
 
   return ExplainMatchResult(
-      AllOf(Property("moduleName", &ApexInfo::getModuleName,
-                     Eq(other.getModuleName())),
-            Property("modulePath", &ApexInfo::getModulePath,
-                     Eq(other.getModulePath())),
-            Property("preinstalledModulePath",
-                     &ApexInfo::getPreinstalledModulePath,
-                     Eq(other.getPreinstalledModulePath())),
-            Property("versionCode", &ApexInfo::getVersionCode,
-                     Eq(other.getVersionCode())),
-            Property("isFactory", &ApexInfo::getIsFactory,
-                     Eq(other.getIsFactory())),
-            Property("isActive", &ApexInfo::getIsActive,
-                     Eq(other.getIsActive()))),
+      AllOf(
+          Property("moduleName", &ApexInfo::getModuleName,
+                   Eq(other.getModuleName())),
+          Property("modulePath", &ApexInfo::getModulePath,
+                   Eq(other.getModulePath())),
+          Property("preinstalledModulePath",
+                   &ApexInfo::getPreinstalledModulePath,
+                   Eq(other.getPreinstalledModulePath())),
+          Property("versionCode", &ApexInfo::getVersionCode,
+                   Eq(other.getVersionCode())),
+          Property("isFactory", &ApexInfo::getIsFactory,
+                   Eq(other.getIsFactory())),
+          Property("isActive", &ApexInfo::getIsActive, Eq(other.getIsActive())),
+          Property("lastUpdateMillis", &ApexInfo::getLastUpdateMillis,
+                   Eq(other.getLastUpdateMillis()))),
       arg, result_listener);
 }
 
