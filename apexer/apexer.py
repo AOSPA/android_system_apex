@@ -32,6 +32,7 @@ import sys
 import tempfile
 import uuid
 import xml.etree.ElementTree as ET
+import zipfile
 from apex_manifest import ValidateApexManifest
 from apex_manifest import ApexManifestError
 from manifest import android_ns
@@ -706,31 +707,8 @@ def CreateApex(args, work_dir):
   RunCommand(cmd, args.verbose)
 
   zip_file = os.path.join(work_dir, 'apex.zip')
-  cmd = ['soong_zip']
-  cmd.append('-d')  # include directories
-  cmd.extend(['-C', content_dir])  # relative root
-  cmd.extend(['-D', content_dir])  # input dir
-  for file_ in os.listdir(content_dir):
-    if os.path.isfile(os.path.join(content_dir, file_)):
-      cmd.extend(['-s', file_])  # don't compress any files
-  cmd.extend(['-o', zip_file])
-  RunCommand(cmd, args.verbose)
-
-  unaligned_apex_file = os.path.join(work_dir, 'unaligned.apex')
-  cmd = ['merge_zips']
-  cmd.append('-j')  # sort
-  cmd.append(unaligned_apex_file)  # output
-  cmd.append(apk_file)  # input
-  cmd.append(zip_file)  # input
-  RunCommand(cmd, args.verbose)
-
-  # Align the files at page boundary for efficient access
-  cmd = ['zipalign']
-  cmd.append('-f')
-  cmd.append(str(BLOCK_SIZE))
-  cmd.append(unaligned_apex_file)
-  cmd.append(args.output)
-  RunCommand(cmd, args.verbose)
+  CreateZip(content_dir, zip_file)
+  MergeZips([apk_file, zip_file], args.output)
 
   if (args.verbose):
     print('Created ' + args.output)
@@ -747,6 +725,30 @@ class TempDirectory(object):
   def __exit__(self, *unused):
     shutil.rmtree(self.name)
 
+def CreateZip(content_dir, apex_zip):
+  with zipfile.ZipFile(apex_zip, 'w', compression=zipfile.ZIP_DEFLATED) as out:
+    for root, _, files in os.walk(content_dir):
+      for file in files:
+        path = os.path.join(root, file)
+        rel_path = os.path.relpath(path, content_dir)
+        # "apex_payload.img" shouldn't be compressed
+        if rel_path == "apex_payload.img":
+          out.write(path, rel_path, compress_type=zipfile.ZIP_STORED)
+        else:
+          out.write(path, rel_path)
+
+def MergeZips(zip_files, output_zip):
+  with zipfile.ZipFile(output_zip, 'w') as out:
+    for file in zip_files:
+      # copy to output_zip
+      with zipfile.ZipFile(file, 'r') as inzip:
+        for info in inzip.infolist():
+          # "apex_payload.img" should be 4K aligned
+          if info.filename == "apex_payload.img":
+            data_offset = out.fp.tell() + len(info.FileHeader())
+            info.extra = b'\0' * (BLOCK_SIZE - data_offset % BLOCK_SIZE)
+          data = inzip.read(info)
+          out.writestr(info, data)
 
 def main(argv):
   global tool_path_list
