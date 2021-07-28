@@ -215,6 +215,15 @@ class Apex(object):
 
 
 def RunList(args):
+  if GetType(args.apex) == ApexType.COMPRESSED:
+    with tempfile.TemporaryDirectory() as temp:
+      decompressed_apex = os.path.join(temp, 'temp.apex')
+      decompress(args.apex, decompressed_apex)
+      args.apex = decompressed_apex
+
+      RunList(args)
+      return
+
   with Apex(args) as apex:
     for e in apex.list(is_recursive=True):
       if e.is_directory:
