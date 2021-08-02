@@ -33,6 +33,7 @@ import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
+import glob
 from apex_manifest import ValidateApexManifest
 from apex_manifest import ApexManifestError
 from manifest import android_ns
@@ -107,8 +108,8 @@ def ParseArgs(argv):
       metavar='FS_TYPE',
       required=False,
       default='ext4',
-      choices=['ext4', 'f2fs'],
-      help='type of filesystem being used for payload image "ext4" or "f2fs"')
+      choices=['ext4', 'f2fs', 'erofs'],
+      help='type of filesystem being used for payload image "ext4", "f2fs" or "erofs"')
   parser.add_argument(
       '--override_apk_package_name',
       required=False,
@@ -592,6 +593,36 @@ def CreateApex(args, work_dir):
       RunCommand(cmd, args.verbose, expected_return_values={0,1})
 
       # TODO(b/158453869): resize the image file to save space
+
+    elif args.payload_fs_type == 'erofs':
+      # mkfs.erofs doesn't support multiple input
+      tmp_input_dir = os.path.join(work_dir, 'tmp_input_dir')
+      os.mkdir(tmp_input_dir)
+      cmd = ['/bin/cp', '-ra']
+      cmd.extend(glob.glob(manifests_dir + '/*'))
+      cmd.extend(glob.glob(args.input_dir + '/*'))
+      cmd.append(tmp_input_dir)
+      RunCommand(cmd, args.verbose)
+
+      cmd = ['make_erofs']
+      cmd.extend(['-z', 'lz4hc'])
+      cmd.extend(['--fs-config-file', args.canned_fs_config])
+      cmd.extend(['--file-contexts', args.file_contexts])
+      uu = str(uuid.uuid5(uuid.NAMESPACE_URL, 'www.android.com'))
+      cmd.extend(['-U', uu])
+      cmd.extend(['-T', '0'])
+      cmd.extend([img_file, tmp_input_dir])
+      RunCommand(cmd, args.verbose)
+      shutil.rmtree(tmp_input_dir)
+
+      # The minimum image size of erofs is 4k, which will cause an error
+      # when execute generate_hash_tree in avbtool
+      cmd = ["/bin/ls", "-lgG", img_file]
+      output, _ = RunCommand(cmd, verbose=False)
+      image_size = int(output.split()[2])
+      if image_size == 4096:
+        cmd = ["/usr/bin/fallocate", "-l", "8k", img_file]
+        RunCommand(cmd, verbose=False)
 
     if args.unsigned_payload_only:
       shutil.copyfile(img_file, args.output)

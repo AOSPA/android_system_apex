@@ -336,6 +336,17 @@ genrule {
 }
 
 genrule {
+  // Extract the root digest with avbtool
+  name: "apex.apexd_test_erofs_digest",
+  out: ["apex.apexd_test_erofs_digest.txt"],
+  srcs: [":apex.apexd_test_erofs"],
+  tools: ["avbtool"],
+  cmd: "unzip -q $(in) -d $(genDir) apex_payload.img && " +
+       "$(location avbtool) print_partition_digests --image $(genDir)/apex_payload.img " +
+       "| cut -c 3-| tee $(out)"
+}
+
+genrule {
   // Generates an apex which has same module name as apex.apexd_test.apex, but
   // is actually signed with a different key.
   name: "gen_key_mismatch_apex",
@@ -414,8 +425,10 @@ cc_test {
   ],
   data: [
     ":apex.apexd_test",
+    ":apex.apexd_test_erofs",
     ":apex.apexd_test_f2fs",
     ":apex.apexd_test_digest",
+    ":apex.apexd_test_erofs_digest",
     ":apex.apexd_test_f2fs_digest",
     ":apex.apexd_test_different_app",
     ":apex.apexd_test_no_hashtree",

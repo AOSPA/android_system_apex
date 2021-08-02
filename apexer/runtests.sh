@@ -28,7 +28,7 @@ m -j apexer
 export APEXER_TOOL_PATH="${ANDROID_BUILD_TOP}/out/soong/host/linux-x86/bin:${ANDROID_BUILD_TOP}/prebuilts/sdk/tools/linux/bin"
 PATH+=":${ANDROID_BUILD_TOP}/prebuilts/sdk/tools/linux/bin"
 
-for fs_type in ext4 f2fs
+for fs_type in ext4 f2fs erofs
 do
 input_dir=$(mktemp -d)
 output_dir=$(mktemp -d)

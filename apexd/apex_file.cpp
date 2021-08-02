@@ -60,7 +60,8 @@ struct FsMagic {
   const char* magic;
 };
 constexpr const FsMagic kFsType[] = {{"f2fs", 1024, 4, "\x10\x20\xf5\xf2"},
-                                     {"ext4", 1024 + 0x38, 2, "\123\357"}};
+                                     {"ext4", 1024 + 0x38, 2, "\123\357"},
+                                     {"erofs", 1024, 4, "\xe2\xe1\xf5\xe0"}};
 
 Result<std::string> RetrieveFsType(borrowed_fd fd, int32_t image_offset) {
   for (const auto& fs : kFsType) {

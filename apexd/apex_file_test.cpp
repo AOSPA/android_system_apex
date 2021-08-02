@@ -44,7 +44,9 @@ struct ApexFileTestParam {
 };
 
 constexpr const ApexFileTestParam kParameters[] = {
-    {"ext4", "apex.apexd_test"}, {"f2fs", "apex.apexd_test_f2fs"}};
+    {"ext4", "apex.apexd_test"},
+    {"f2fs", "apex.apexd_test_f2fs"},
+    {"erofs", "apex.apexd_test_erofs"}};
 
 class ApexFileTest : public ::testing::TestWithParam<ApexFileTestParam> {};
 
