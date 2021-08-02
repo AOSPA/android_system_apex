@@ -62,7 +62,7 @@ library_linking_strategy_cc_defaults {
 }
 
 cc_binary {
-  name: "library_linking_strategy_sample_binary",
-  srcs: ["library_linking_strategy.cc"],
-  defaults: ["library_linking_strategy_sample_defaults"],
+    name: "library_linking_strategy_sample_binary",
+    srcs: ["library_linking_strategy.cc"],
+    defaults: ["library_linking_strategy_sample_defaults"],
 }

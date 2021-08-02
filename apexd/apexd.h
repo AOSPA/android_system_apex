@@ -28,6 +28,7 @@
 #include "apex_database.h"
 #include "apex_file.h"
 #include "apex_file_repository.h"
+#include "apexd_session.h"
 
 namespace android {
 namespace apex {
@@ -45,11 +46,13 @@ struct ApexdConfig {
   const char* decompression_dir;
   const char* ota_reserved_dir;
   const char* apex_hash_tree_dir;
+  const char* staged_session_dir;
 };
 
 static const ApexdConfig kDefaultConfig = {
     kApexStatusSysprop,   kApexPackageBuiltinDirs, kActiveApexPackagesDataDir,
     kApexDecompressedDir, kOtaReservedDir,         kApexHashTreeDir,
+    kStagedSessionsDir,
 };
 
 class CheckpointInterface;
@@ -80,10 +83,14 @@ android::base::Result<void> MarkStagedSessionReady(const int session_id)
     WARN_UNUSED;
 android::base::Result<void> MarkStagedSessionSuccessful(const int session_id)
     WARN_UNUSED;
+// Only only of the parameters should be passed during revert
 android::base::Result<void> RevertActiveSessions(
-    const std::string& crashing_native_process);
+    const std::string& crashing_native_process,
+    const std::string& error_message);
+// Only only of the parameters should be passed during revert
 android::base::Result<void> RevertActiveSessionsAndReboot(
-    const std::string& crashing_native_process);
+    const std::string& crashing_native_process,
+    const std::string& error_message);
 
 android::base::Result<void> ActivatePackage(const std::string& full_path)
     WARN_UNUSED;

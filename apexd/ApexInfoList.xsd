@@ -32,6 +32,7 @@
       <xs:attribute name="versionName" type="xs:string" use="required"/>
       <xs:attribute name="isFactory" type="xs:boolean" use="required"/>
       <xs:attribute name="isActive" type="xs:boolean" use="required"/>
+      <xs:attribute name="lastUpdateMillis" type="xs:long"/>
     </xs:complexType>
   </xs:element>
 </xs:schema>

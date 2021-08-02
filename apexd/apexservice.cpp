@@ -280,6 +280,7 @@ void ConvertToApexSessionInfo(const ApexSession& session,
   ClearSessionInfo(session_info);
   session_info->sessionId = session.GetId();
   session_info->crashingNativeProcess = session.GetCrashingNativeProcess();
+  session_info->errorMessage = session.GetErrorMessage();
 
   switch (session.GetState()) {
     case SessionState::VERIFIED:
@@ -522,7 +523,7 @@ BinderStatus ApexService::abortStagedSession(int session_id) {
 
 BinderStatus ApexService::revertActiveSessions() {
   LOG(DEBUG) << "revertActiveSessions() received by ApexService.";
-  Result<void> res = ::android::apex::RevertActiveSessions("");
+  Result<void> res = ::android::apex::RevertActiveSessions("", "");
   if (!res.ok()) {
     return BinderStatus::fromExceptionCode(
         BinderStatus::EX_ILLEGAL_ARGUMENT,
@@ -724,14 +725,19 @@ status_t ApexService::dump(int fd, const Vector<String16>& /*args*/) {
       }
     }
     std::string revert_reason = "";
-    std::string crashing_native_process = session.GetCrashingNativeProcess();
+    const auto& crashing_native_process = session.GetCrashingNativeProcess();
     if (!crashing_native_process.empty()) {
       revert_reason = " Revert Reason: " + crashing_native_process;
+    }
+    std::string error_message_dump = "";
+    const auto& error_message = session.GetErrorMessage();
+    if (!error_message.empty()) {
+      error_message_dump = " Error Message: " + error_message;
     }
     std::string msg =
         StringLog() << "Session ID: " << session.GetId() << child_ids_str
                     << " State: " << SessionState_State_Name(session.GetState())
-                    << revert_reason << std::endl;
+                    << revert_reason << error_message_dump << std::endl;
     dprintf(fd, "%s", msg.c_str());
   }
 

@@ -161,8 +161,11 @@ inline android::base::Result<void> DeleteDirContent(const std::string& path) {
            << "Failed to delete " << path << " : " << files.error();
   }
   for (const std::string& file : *files) {
-    if (unlink(file.c_str()) != 0) {
-      return android::base::ErrnoError() << "Failed to delete " << file;
+    std::error_code ec;
+    std::filesystem::remove_all(file, ec);
+    if (ec) {
+      return android::base::Error()
+             << "Failed to delete path " << file << " : " << ec.message();
     }
   }
   return {};

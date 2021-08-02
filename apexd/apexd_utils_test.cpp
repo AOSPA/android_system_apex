@@ -46,6 +46,25 @@ using ::testing::UnorderedElementsAreArray;
 
 // TODO(b/170327382): add unit tests for apexd_utils.h
 
+TEST(ApexdUtilTest, DeleteDirContent) {
+  TemporaryDir root_dir;
+  TemporaryFile child_file_1(root_dir.path);
+  TemporaryFile child_file_2(root_dir.path);
+  std::string child_dir = StringPrintf("%s/child-dir", root_dir.path);
+  CreateDirIfNeeded(child_dir, 0755);
+  TemporaryFile nested_file(child_dir);
+
+  auto content = ReadDir(root_dir.path, [](auto _) { return true; });
+  IsOk(content);
+  ASSERT_EQ(content->size(), 3u);
+
+  auto del_result = DeleteDirContent(root_dir.path);
+  IsOk(del_result);
+  content = ReadDir(root_dir.path, [](auto _) { return true; });
+  IsOk(content);
+  ASSERT_EQ(content->size(), 0u);
+}
+
 TEST(ApexdUtilTest, FindFirstExistingDirectoryBothExist) {
   TemporaryDir first_dir;
   TemporaryDir second_dir;

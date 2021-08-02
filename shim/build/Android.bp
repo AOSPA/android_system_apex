@@ -562,3 +562,13 @@ apex {
   installable: false,
   updatable: false,
 }
+
+apex {
+  name: "com.android.apex.cts.shim.v3_rebootless",
+  manifest: "manifest_v3_rebootless.json",
+  file_contexts: ":apex.test-file_contexts",
+  key: "com.android.apex.cts.shim.key",
+  prebuilts: ["hash_of_dev_null"],
+  installable: false,
+  updatable: false,
+}

@@ -36,7 +36,7 @@ bool ApexdLifecycle::IsBooting() {
 }
 
 void ApexdLifecycle::WaitForBootStatus(
-    Result<void> (&revert_fn)(const std::string&)) {
+    Result<void> (&revert_fn)(const std::string&, const std::string&)) {
   while (!boot_completed_) {
     // Check for change in either crashing property or sys.boot_completed
     // Wait for updatable_crashing property change for most of the time
@@ -49,7 +49,7 @@ void ApexdLifecycle::WaitForBootStatus(
       auto name = GetProperty("sys.init.updatable_crashing_process_name", "");
       LOG(ERROR) << "Native process '" << (name.empty() ? "[unknown]" : name)
                  << "' is crashing. Attempting a revert";
-      auto result = revert_fn(name);
+      auto result = revert_fn(name, "");
       if (!result.ok()) {
         LOG(ERROR) << "Revert failed : " << result.error();
         break;

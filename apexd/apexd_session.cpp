@@ -157,7 +157,7 @@ SessionState::State ApexSession::GetState() const { return state_.state(); }
 
 int ApexSession::GetId() const { return state_.id(); }
 
-std::string ApexSession::GetBuildFingerprint() const {
+const std::string& ApexSession::GetBuildFingerprint() const {
   return state_.expected_build_fingerprint();
 }
 
@@ -181,8 +181,12 @@ bool ApexSession::IsRollback() const { return state_.is_rollback(); }
 
 int ApexSession::GetRollbackId() const { return state_.rollback_id(); }
 
-std::string ApexSession::GetCrashingNativeProcess() const {
+const std::string& ApexSession::GetCrashingNativeProcess() const {
   return state_.crashing_native_process();
+}
+
+const std::string& ApexSession::GetErrorMessage() const {
+  return state_.error_message();
 }
 
 const google::protobuf::RepeatedField<int> ApexSession::GetChildSessionIds()
@@ -220,6 +224,10 @@ void ApexSession::SetRollbackId(const int rollback_id) {
 void ApexSession::SetCrashingNativeProcess(
     const std::string& crashing_process) {
   state_.set_crashing_native_process(crashing_process);
+}
+
+void ApexSession::SetErrorMessage(const std::string& error_message) {
+  state_.set_error_message(error_message);
 }
 
 void ApexSession::AddApexName(const std::string& apex_name) {
