@@ -1,6 +1,6 @@
 drops {
   android_build_drop {
-    build_id: "7533747"
+    build_id: "7552332"
     target: "CtsShim"
     source_file: "aosp_x86_64/com.android.apex.cts.shim.v2_different_certificate.apex"
   }
@@ -10,4 +10,6 @@ drops {
   git_project: "platform/system/apex"
   git_branch: "sc-dev"
   transform: TRANSFORM_NONE
+  transform_options {
+  }
 }

@@ -132,6 +132,46 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
     }
 
     /**
+     * Utility function to generate the file name of an installed package as per
+     * apexd convention e.g.: "com.android.apex.test.bar@1.apex"
+     */
+    private String getInstalledApexFileName(ApexName apexName, ApexVersion apexVersion) {
+        StringBuilder ret = new StringBuilder();
+        ret.append("com.android.apex.test.");
+        switch(apexName) {
+            case FOO:
+                ret.append("foo");
+                break;
+            case BAR:
+                ret.append("bar");
+                break;
+            case BAZ:
+                ret.append("baz");
+                break;
+            case PONY:
+                ret.append("pony");
+                break;
+            case SHAREDLIBS:
+                ret.append("sharedlibs");
+                break;
+            case SHAREDLIBS_SECONDARY:
+                ret.append("sharedlibs_secondary");
+                break;
+        }
+        ret.append("@");
+        switch(apexVersion) {
+            case ONE:
+                ret.append("1");
+                break;
+            case TWO:
+                ret.append("2");
+                break;
+        }
+        ret.append(".apex");
+        return ret.toString();
+    }
+
+    /**
      * Tests basic functionality of two apex packages being force-installed and the C++ binaries
      * contained in them being executed correctly.
      */
@@ -198,6 +238,8 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
         assumeTrue("Device requires root", getDevice().isAdbRoot());
 
+        // Base case:
+        //
         // Pre-installed on /system:
         //   package bar version 1 using library version X
         //   package foo version 1 using library version X
@@ -236,10 +278,52 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
                 "/apex/com.android.apex.test.pony/bin/pony_test");
         assertThat(runAsResult).isEqualTo("PONY_VERSION_1 SHARED_LIB_VERSION_Z");
 
+        // Edge case: sharedlibs updated with a same version apex.
+        //
+        // Updated packages (installed on /data/apex/active):
+        //   package sharedlibs version 1 exporting library version X            <-- new
+        //   package sharedlibs_secondary version 1 exporting library version Z  <-- new
+        //
+        // Pre-installed:
+        //   package bar version 1 using library version X
+        //   package foo version 1 using library version X
+        //   (inactive) package sharedlibs version 1 exporting library version X
+        //
+        //   package pony version 1 using library version Z
+        //   (inactive) package sharedlibs_secondary version 1 exporting library version Z
+
+        mPreparer.stageMultiplePackages(
+            new String[]{
+                getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.ONE,
+                    SharedLibsVersion.X),
+                getTestApex(ApexName.SHAREDLIBS_SECONDARY, ApexType.DEFAULT, ApexVersion.ONE,
+                    SharedLibsVersion.Z),
+            },
+            new String[]{
+                "com.android.apex.test.sharedlibs",
+                "com.android.apex.test.sharedlibs_secondary",
+            }).reboot();
+
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.foo/bin/foo_test");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_1 SHARED_LIB_VERSION_X");
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.bar/bin/bar_test32");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        if (CpuFeatures.isX86_64(getDevice()) || CpuFeatures.isArm64(getDevice())) {
+            runAsResult = getDevice().executeShellCommand(
+                    "/apex/com.android.apex.test.bar/bin/bar_test64");
+            assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        }
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.pony/bin/pony_test");
+        assertThat(runAsResult).isEqualTo("PONY_VERSION_1 SHARED_LIB_VERSION_Z");
+
         // Updated packages (installed on /data/apex/active):
         //   package bar version 2 using library version Y               <-- new
         //   package foo version 2 using library version Y               <-- new
         //   package sharedlibs version 2 exporting library version Y    <-- new
+        //   package sharedlibs_secondary version 1 exporting library version Z
         //
         // Pre-installed:
         //   (inactive) package bar version 1 using library version X
@@ -247,7 +331,7 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         //   package sharedlibs version 1 exporting library version X
         //
         //   package pony version 1 using library version Z
-        //   package sharedlibs_secondary version 1 exporting library version Z
+        //   (inactive) package sharedlibs_secondary version 1 exporting library version Z
 
         mPreparer.stageMultiplePackages(
             new String[]{
@@ -315,5 +399,136 @@ public class SharedLibsApexTest extends BaseHostJUnit4Test {
         runAsResult = getDevice().executeShellCommand(
                 "/apex/com.android.apex.test.pony/bin/pony_test");
         assertThat(runAsResult).isEqualTo("PONY_VERSION_1 SHARED_LIB_VERSION_Z");
+    }
+
+    /**
+     * Tests that when a shared library apex is updated via OTA the previously
+     * downloaded version is remoted.
+     */
+    @Test
+    public void testHigherVersionOnSystemDeletesDataVersion() throws Exception {
+        assumeTrue("Device does not support updating APEX", mHostUtils.isApexUpdateSupported());
+        assumeTrue("Device requires root", getDevice().isAdbRoot());
+
+        // Base case:
+        //
+        // Pre-installed on /system:
+        //   package bar version 1 using library version X
+        //   package foo version 1 using library version X
+        //   package sharedlibs version 1 exporting library version X
+        for (String apex : new String[]{
+                getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.ONE,
+                    SharedLibsVersion.X),
+        }) {
+            mPreparer.pushResourceFile(apex,
+                    "/system/apex/" + apex);
+        }
+        mPreparer.reboot();
+        String runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.foo/bin/foo_test");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_1 SHARED_LIB_VERSION_X");
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.bar/bin/bar_test32");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        if (CpuFeatures.isX86_64(getDevice()) || CpuFeatures.isArm64(getDevice())) {
+            runAsResult = getDevice().executeShellCommand(
+                    "/apex/com.android.apex.test.bar/bin/bar_test64");
+            assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        }
+
+        // Same-grade case:
+        //
+        // Pre-installed on /system:
+        //   package bar version 1 using library version X
+        //   package foo version 1 using library version X
+        //   package sharedlibs version 1 exporting library version X
+        // Updated packages (installed on /data/apex/active):
+        //   package bar version 1 using library version X
+        //   package foo version 1 using library version X
+        //   package sharedlibs version 1 exporting library version X
+        mPreparer.stageMultiplePackages(
+            new String[]{
+                getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.ONE,
+                    SharedLibsVersion.X),
+            },
+            new String[]{
+                "com.android.apex.test.bar",
+                "com.android.apex.test.foo",
+                "com.android.apex.test.sharedlibs",
+            }).reboot();
+
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.foo/bin/foo_test");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_1 SHARED_LIB_VERSION_X");
+        runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.bar/bin/bar_test32");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        if (CpuFeatures.isX86_64(getDevice()) || CpuFeatures.isArm64(getDevice())) {
+            runAsResult = getDevice().executeShellCommand(
+                    "/apex/com.android.apex.test.bar/bin/bar_test64");
+            assertThat(runAsResult).isEqualTo("BAR_VERSION_1 SHARED_LIB_VERSION_X");
+        }
+
+        // Simulate OTA upgrading pre-installed modules:
+        //
+        // Pre-installed on /system:
+        //   package bar version 2 using library version Y
+        //   package foo version 2 using library version Y
+        //   package sharedlibs version 2 exporting library version Y
+        //
+        // Updated packages (installed on /data/apex/active):
+        //   package bar version 1 using library version X (deleted)
+        //   package foo version 1 using library version X (deleted)
+        //   package sharedlibs version 1 exporting library version X (deleted)
+        //
+        for (String apex : new String[]{
+                getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.ONE, SharedLibsVersion.X),
+                getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.ONE,
+                    SharedLibsVersion.X),
+        }) {
+            mPreparer.deleteFile("/system/apex/" + apex);
+        }
+        for (String apex : new String[]{
+                getTestApex(ApexName.BAR, ApexType.STRIPPED, ApexVersion.TWO, SharedLibsVersion.Y),
+                getTestApex(ApexName.FOO, ApexType.STRIPPED, ApexVersion.TWO, SharedLibsVersion.Y),
+                getTestApex(ApexName.SHAREDLIBS, ApexType.DEFAULT, ApexVersion.TWO,
+                    SharedLibsVersion.Y),
+        }) {
+            mPreparer.pushResourceFile(apex,
+                    "/system/apex/" + apex);
+        }
+
+        // Check that files in /data are deleted on first boot.
+        assertThat(getDevice().doesFileExist("/data/apex/active/"
+                + getInstalledApexFileName(ApexName.BAR, ApexVersion.ONE))).isTrue();
+        assertThat(getDevice().doesFileExist("/data/apex/active/"
+                + getInstalledApexFileName(ApexName.FOO, ApexVersion.ONE))).isTrue();
+        assertThat(getDevice().doesFileExist("/data/apex/active/"
+                + getInstalledApexFileName(ApexName.SHAREDLIBS, ApexVersion.ONE))).isTrue();
+        mPreparer.reboot();
+        assertThat(getDevice().doesFileExist("/data/apex/active/"
+                + getInstalledApexFileName(ApexName.BAR, ApexVersion.ONE))).isFalse();
+        assertThat(getDevice().doesFileExist("/data/apex/active/"
+                + getInstalledApexFileName(ApexName.FOO, ApexVersion.ONE))).isFalse();
+        assertThat(getDevice().doesFileExist("/data/apex/active/"
+                + getInstalledApexFileName(ApexName.SHAREDLIBS, ApexVersion.ONE))).isFalse();
+
+        getDevice().disableAdbRoot();
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.foo/bin/foo_test");
+        assertThat(runAsResult).isEqualTo("FOO_VERSION_2 SHARED_LIB_VERSION_Y");
+        runAsResult = getDevice().executeShellCommand(
+            "/apex/com.android.apex.test.bar/bin/bar_test32");
+        assertThat(runAsResult).isEqualTo("BAR_VERSION_2 SHARED_LIB_VERSION_Y");
+        if (CpuFeatures.isX86_64(getDevice()) || CpuFeatures.isArm64(getDevice())) {
+            runAsResult = getDevice().executeShellCommand(
+                "/apex/com.android.apex.test.bar/bin/bar_test64");
+            assertThat(runAsResult).isEqualTo("BAR_VERSION_2 SHARED_LIB_VERSION_Y");
+        }
     }
 }
