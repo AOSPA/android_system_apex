@@ -680,19 +680,24 @@ Result<void> RunVerifyFnInsideTempMount(const ApexFile& apex,
     return mount_status.error();
   }
   auto cleaner = [&]() {
-    if (unmount_during_cleanup) {
-      LOG(DEBUG) << "Unmounting " << temp_mount_point;
-      Result<void> result = Unmount(*mount_status, /* deferred= */ false);
-      if (!result.ok()) {
-        LOG(WARNING) << "Failed to unmount " << temp_mount_point << " : "
-                     << result.error();
-      }
-      gMountedApexes.RemoveMountedApex(apex.GetManifest().name(),
-                                       apex.GetPath(), true);
+    LOG(DEBUG) << "Unmounting " << temp_mount_point;
+    Result<void> result = Unmount(*mount_status, /* deferred= */ false);
+    if (!result.ok()) {
+      LOG(WARNING) << "Failed to unmount " << temp_mount_point << " : "
+                   << result.error();
     }
+    gMountedApexes.RemoveMountedApex(apex.GetManifest().name(), apex.GetPath(),
+                                     true);
   };
   auto scope_guard = android::base::make_scope_guard(cleaner);
-  return verify_fn(temp_mount_point);
+  auto result = verify_fn(temp_mount_point);
+  if (!result.ok()) {
+    return result.error();
+  }
+  if (!unmount_during_cleanup) {
+    scope_guard.Disable();
+  }
+  return {};
 }
 
 template <typename HookFn, typename HookCall>
@@ -2917,6 +2922,11 @@ Result<std::vector<ApexFile>> SubmitStagedSession(
   }
 
   std::vector<ApexFile> ret;
+  auto guard = android::base::make_scope_guard([&ret]() {
+    for (const auto& apex : ret) {
+      apexd_private::UnmountTempMount(apex);
+    }
+  });
   for (int id_to_scan : ids_to_scan) {
     auto verified = VerifySessionDir(id_to_scan);
     if (!verified.ok()) {
