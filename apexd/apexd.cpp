@@ -680,19 +680,24 @@ Result<void> RunVerifyFnInsideTempMount(const ApexFile& apex,
     return mount_status.error();
   }
   auto cleaner = [&]() {
-    if (unmount_during_cleanup) {
-      LOG(DEBUG) << "Unmounting " << temp_mount_point;
-      Result<void> result = Unmount(*mount_status, /* deferred= */ false);
-      if (!result.ok()) {
-        LOG(WARNING) << "Failed to unmount " << temp_mount_point << " : "
-                     << result.error();
-      }
-      gMountedApexes.RemoveMountedApex(apex.GetManifest().name(),
-                                       apex.GetPath(), true);
+    LOG(DEBUG) << "Unmounting " << temp_mount_point;
+    Result<void> result = Unmount(*mount_status, /* deferred= */ false);
+    if (!result.ok()) {
+      LOG(WARNING) << "Failed to unmount " << temp_mount_point << " : "
+                   << result.error();
     }
+    gMountedApexes.RemoveMountedApex(apex.GetManifest().name(), apex.GetPath(),
+                                     true);
   };
   auto scope_guard = android::base::make_scope_guard(cleaner);
-  return verify_fn(temp_mount_point);
+  auto result = verify_fn(temp_mount_point);
+  if (!result.ok()) {
+    return result.error();
+  }
+  if (!unmount_during_cleanup) {
+    scope_guard.Disable();
+  }
+  return {};
 }
 
 template <typename HookFn, typename HookCall>
@@ -1760,7 +1765,7 @@ void SnapshotOrRestoreDeIfNeeded(const std::string& base_dir,
     }
   } else if (session.IsRollback()) {
     for (const auto& apex_name : session.GetApexNames()) {
-      if (!gInFsCheckpointMode) {
+      if (!gSupportsFsCheckpoints) {
         // Snapshot before restore so this rollback can be reverted.
         SnapshotDataDirectory(base_dir, session.GetRollbackId(), apex_name,
                               true /* pre_restore */);
@@ -1974,6 +1979,17 @@ void ScanStagedSessionsDirAndStage() {
     std::string build_fingerprint = GetProperty(kBuildFingerprintSysprop, "");
     if (session.GetBuildFingerprint().compare(build_fingerprint) != 0) {
       auto error_message = "APEX build fingerprint has changed";
+      LOG(ERROR) << error_message;
+      session.SetErrorMessage(error_message);
+      continue;
+    }
+
+    // If device supports fs-checkpoint, then apex session should only be
+    // installed when in checkpoint-mode. Otherwise, we will not be able to
+    // revert /data on error.
+    if (gSupportsFsCheckpoints && !gInFsCheckpointMode) {
+      auto error_message =
+          "Cannot install apex session if not in fs-checkpoint mode";
       LOG(ERROR) << error_message;
       session.SetErrorMessage(error_message);
       continue;
@@ -2249,7 +2265,7 @@ Result<void> RevertActiveSessions(const std::string& crashing_native_process,
     }
   }
 
-  if (!gInFsCheckpointMode) {
+  if (!gSupportsFsCheckpoints) {
     auto restore_status = RestoreActivePackages();
     if (!restore_status.ok()) {
       for (auto& session : active_sessions) {
@@ -2267,7 +2283,7 @@ Result<void> RevertActiveSessions(const std::string& crashing_native_process,
   }
 
   for (auto& session : active_sessions) {
-    if (!gInFsCheckpointMode && session.IsRollback()) {
+    if (!gSupportsFsCheckpoints && session.IsRollback()) {
       // If snapshots have already been restored, undo that by restoring the
       // pre-restore snapshot.
       RestoreDePreRestoreSnapshotsIfPresent(session);
@@ -2500,19 +2516,46 @@ std::vector<ApexFileRef> SelectApexForActivation(
                            const ApexFileRef& a_ref,
                            const int version_b) mutable {
       const ApexFile& a = a_ref.get();
-      // APEX that provides shared library always gets activated
-      const bool provides_shared_apex_libs =
-          a.GetManifest().providesharedapexlibs();
       // If A has higher version than B, then it should be activated
       const bool higher_version = a.GetManifest().version() > version_b;
       // If A has same version as B, then data version should get activated
       const bool same_version_priority_to_data =
           a.GetManifest().version() == version_b &&
           !instance.IsPreInstalledApex(a);
-      if (provides_shared_apex_libs || higher_version ||
-          same_version_priority_to_data) {
+
+      // APEX that provides shared library are special:
+      //  - if preinstalled version is lower than data version, both versions
+      //    are activated.
+      //  - if preinstalled version is equal to data version, data version only
+      //    is activated.
+      //  - if preinstalled version is higher than data version, preinstalled
+      //    version only is activated.
+      const bool provides_shared_apex_libs =
+          a.GetManifest().providesharedapexlibs();
+      bool activate = false;
+      if (provides_shared_apex_libs) {
+        // preinstalled version gets activated in all cases except when same
+        // version as data.
+        if (instance.IsPreInstalledApex(a) &&
+            (a.GetManifest().version() != version_b)) {
+          LOG(DEBUG) << "Activating preinstalled shared libs APEX: "
+                     << a.GetManifest().name() << " " << a.GetPath();
+          activate = true;
+        }
+        // data version gets activated in all cases except when its version
+        // is lower than preinstalled version.
+        if (!instance.IsPreInstalledApex(a) &&
+            (a.GetManifest().version() >= version_b)) {
+          LOG(DEBUG) << "Activating shared libs APEX: "
+                     << a.GetManifest().name() << " " << a.GetPath();
+          activate = true;
+        }
+      } else if (higher_version || same_version_priority_to_data) {
         LOG(DEBUG) << "Selecting between two APEX: " << a.GetManifest().name()
                    << " " << a.GetPath();
+        activate = true;
+      }
+      if (activate) {
         activation_list.emplace_back(a_ref);
       }
     };
@@ -2879,6 +2922,11 @@ Result<std::vector<ApexFile>> SubmitStagedSession(
   }
 
   std::vector<ApexFile> ret;
+  auto guard = android::base::make_scope_guard([&ret]() {
+    for (const auto& apex : ret) {
+      apexd_private::UnmountTempMount(apex);
+    }
+  });
   for (int id_to_scan : ids_to_scan) {
     auto verified = VerifySessionDir(id_to_scan);
     if (!verified.ok()) {
@@ -2956,7 +3004,7 @@ Result<void> MarkStagedSessionSuccessful(const int session_id) {
       return Error() << "Failed to mark session " << *session
                      << " as successful : " << cleanup_status.error();
     }
-    if (session->IsRollback() && !gInFsCheckpointMode) {
+    if (session->IsRollback() && !gSupportsFsCheckpoints) {
       DeleteDePreRestoreSnapshots(*session);
     }
     return session->UpdateStateAndCommit(SessionState::SUCCESS);

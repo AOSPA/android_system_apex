@@ -77,17 +77,28 @@ static int64_t GetMTime(const std::string& path) {
 // A very basic mock of CheckpointInterface.
 class MockCheckpointInterface : public CheckpointInterface {
  public:
-  Result<bool> SupportsFsCheckpoints() override { return {}; }
+  Result<bool> SupportsFsCheckpoints() override {
+    return supports_fs_checkpoint_;
+  }
 
-  Result<bool> NeedsCheckpoint() override { return false; }
+  Result<bool> NeedsCheckpoint() override { return needs_checkpoint_; }
 
-  Result<bool> NeedsRollback() override { return false; }
+  Result<bool> NeedsRollback() override { return needs_rollback_; }
 
   Result<void> StartCheckpoint(int32_t num_retries) override { return {}; }
 
   Result<void> AbortChanges(const std::string& msg, bool retry) override {
     return {};
   }
+
+  void SetSupportsCheckpoint(bool value) { supports_fs_checkpoint_ = value; }
+
+  void SetNeedsCheckpoint(bool value) { needs_checkpoint_ = value; }
+
+  void SetNeedsRollback(bool value) { needs_rollback_ = value; }
+
+ private:
+  bool supports_fs_checkpoint_, needs_checkpoint_, needs_rollback_;
 };
 
 static constexpr const char* kTestApexdStatusSysprop = "apexd.status.test";
@@ -211,6 +222,8 @@ TEST_F(ApexdUnitTest, ApexMustHavePreInstalledVersionForSelection) {
 
   auto apexd_test_file = ApexFile::Open(AddDataApex("apex.apexd_test.apex"));
   auto shim_v1 = ApexFile::Open(AddDataApex("com.android.apex.cts.shim.apex"));
+  // Normally both pre-installed and data apex would be activated for a shared
+  // libs apex, but if they are the same version only the data apex will be.
   auto shared_lib_2 = ApexFile::Open(
       AddDataApex("com.android.apex.test.sharedlibs_generated.v1.libvX.apex"));
   ASSERT_TRUE(IsOk(instance.AddDataApex(GetDataDir())));
@@ -223,10 +236,9 @@ TEST_F(ApexdUnitTest, ApexMustHavePreInstalledVersionForSelection) {
   ASSERT_EQ(result.size(), 0u);
   // When passed proper instance they should get selected
   result = SelectApexForActivation(all_apex, instance);
-  ASSERT_EQ(result.size(), 4u);
+  ASSERT_EQ(result.size(), 3u);
   ASSERT_THAT(result, UnorderedElementsAre(ApexFileEq(ByRef(*apexd_test_file)),
                                            ApexFileEq(ByRef(*shim_v1)),
-                                           ApexFileEq(ByRef(*shared_lib_1)),
                                            ApexFileEq(ByRef(*shared_lib_2))));
 }
 
@@ -274,7 +286,8 @@ TEST_F(ApexdUnitTest, DataApexGetsPriorityForSameVersions) {
                                            ApexFileEq(ByRef(*shim_v1))));
 }
 
-// Both versions of shared libs can be selected
+// Both versions of shared libs can be selected when preinstalled version is
+// lower than data version
 TEST_F(ApexdUnitTest, SharedLibsCanHaveBothVersionSelected) {
   auto shared_lib_v1 = ApexFile::Open(AddPreInstalledApex(
       "com.android.apex.test.sharedlibs_generated.v1.libvX.apex"));
@@ -293,6 +306,27 @@ TEST_F(ApexdUnitTest, SharedLibsCanHaveBothVersionSelected) {
 
   ASSERT_THAT(result, UnorderedElementsAre(ApexFileEq(ByRef(*shared_lib_v1)),
                                            ApexFileEq(ByRef(*shared_lib_v2))));
+}
+
+// Data version of shared libs should not be selected if lower than
+// preinstalled version
+TEST_F(ApexdUnitTest, SharedLibsDataVersionDeletedIfLower) {
+  auto shared_lib_v2 = ApexFile::Open(AddPreInstalledApex(
+      "com.android.apex.test.sharedlibs_generated.v2.libvY.apex"));
+  // Initialize pre-installed APEX information
+  auto& instance = ApexFileRepository::GetInstance();
+  ASSERT_TRUE(IsOk(instance.AddPreInstalledApex({GetBuiltInDir()})));
+
+  auto shared_lib_v1 = ApexFile::Open(
+      AddDataApex("com.android.apex.test.sharedlibs_generated.v1.libvX.apex"));
+  // Initialize data APEX information
+  ASSERT_TRUE(IsOk(instance.AddDataApex(GetDataDir())));
+
+  auto all_apex = instance.AllApexFilesByName();
+  auto result = SelectApexForActivation(all_apex, instance);
+  ASSERT_EQ(result.size(), 1u);
+
+  ASSERT_THAT(result, UnorderedElementsAre(ApexFileEq(ByRef(*shared_lib_v2))));
 }
 
 TEST_F(ApexdUnitTest, ProcessCompressedApex) {
@@ -3518,6 +3552,51 @@ TEST_F(ApexActivationFailureTests, ActivatePackageImplFails) {
               HasSubstr("Failed to activate packages"));
   ASSERT_THAT(apex_session->GetErrorMessage(),
               HasSubstr("has unexpected SHA512 hash"));
+}
+
+TEST_F(ApexActivationFailureTests,
+       StagedSessionFailsWhenNotInFsCheckpointMode) {
+  MockCheckpointInterface checkpoint_interface;
+  checkpoint_interface.SetSupportsCheckpoint(true);
+  // Need to call InitializeVold before calling OnStart
+  InitializeVold(&checkpoint_interface);
+
+  auto pre_installed_apex = AddPreInstalledApex("apex.apexd_test.apex");
+  auto& instance = ApexFileRepository::GetInstance();
+  ASSERT_RESULT_OK(instance.AddPreInstalledApex({GetBuiltInDir()}));
+
+  auto apex_session = CreateStagedSession("apex.apexd_test.apex", 123);
+  apex_session->UpdateStateAndCommit(SessionState::STAGED);
+
+  UnmountOnTearDown(pre_installed_apex);
+  OnStart();
+
+  apex_session = ApexSession::GetSession(123);
+  ASSERT_EQ(apex_session->GetState(), SessionState::ACTIVATION_FAILED);
+  ASSERT_THAT(
+      apex_session->GetErrorMessage(),
+      HasSubstr("Cannot install apex session if not in fs-checkpoint mode"));
+}
+
+TEST_F(ApexActivationFailureTests, StagedSessionRevertsWhenInFsRollbackMode) {
+  MockCheckpointInterface checkpoint_interface;
+  checkpoint_interface.SetSupportsCheckpoint(true);
+  checkpoint_interface.SetNeedsRollback(true);
+  // Need to call InitializeVold before calling OnStart
+  InitializeVold(&checkpoint_interface);
+
+  auto pre_installed_apex = AddPreInstalledApex("apex.apexd_test.apex");
+  auto& instance = ApexFileRepository::GetInstance();
+  ASSERT_RESULT_OK(instance.AddPreInstalledApex({GetBuiltInDir()}));
+
+  auto apex_session = CreateStagedSession("apex.apexd_test.apex", 123);
+  apex_session->UpdateStateAndCommit(SessionState::STAGED);
+
+  UnmountOnTearDown(pre_installed_apex);
+  OnStart();
+
+  apex_session = ApexSession::GetSession(123);
+  ASSERT_EQ(apex_session->GetState(), SessionState::REVERTED);
 }
 
 }  // namespace apex
