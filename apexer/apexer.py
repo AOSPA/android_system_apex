@@ -531,6 +531,7 @@ def CreateApex(args, work_dir):
       cmd.extend(['-T', '0'])  # time is set to epoch
       cmd.extend(['-S', compiled_file_contexts])
       cmd.extend(['-C', args.canned_fs_config])
+      cmd.extend(['-a', '/'])
       cmd.append('-s')  # share dup blocks
       cmd.append(img_file)
       RunCommand(cmd, args.verbose, {'E2FSPROGS_FAKE_TIME': '1'})
@@ -541,6 +542,7 @@ def CreateApex(args, work_dir):
       cmd.extend(['-T', '0'])  # time is set to epoch
       cmd.extend(['-S', compiled_file_contexts])
       cmd.extend(['-C', args.canned_fs_config])
+      cmd.extend(['-a', '/'])
       cmd.append('-s')  # share dup blocks
       cmd.append(img_file)
       RunCommand(cmd, args.verbose, {'E2FSPROGS_FAKE_TIME': '1'})
